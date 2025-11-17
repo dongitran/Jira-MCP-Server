@@ -230,45 +230,6 @@ npm run lint
 npm run lint:fix
 ```
 
-## Project Structure
-
-```
-jira-mcp-server/
-├── config/
-│   └── tokenManager.js      # OAuth token management
-├── services/
-│   └── jiraService.js       # Jira API wrapper
-├── tools/
-│   └── jiraTools.js         # MCP tools registration
-├── server.js                # Main MCP server
-├── package.json
-└── eslint.config.js
-```
-
-## How It Works
-
-1. **Token Management**: Automatically validates and refreshes OAuth tokens
-2. **Cloud ID**: Auto-fetches Jira Cloud ID from accessible resources
-3. **MCP Protocol**: Uses stdio transport (standard for MCP servers)
-4. **Stateless**: No database required, all auth via command-line arguments
-
-## Troubleshooting
-
-**Error: Missing required OAuth credentials**
-- Ensure all 4 arguments are provided: access_token, refresh_token, client_id, client_secret
-
-**Error: No accessible resources found**
-- Check your OAuth app has access to Jira
-- Verify your access_token is valid
-
-**Token expired**
-- The server automatically refreshes tokens
-- Check your refresh_token is still valid
-
-**Node version error**
-- Requires Node.js 18 or higher
-- Check: `node --version`
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
