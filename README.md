@@ -17,7 +17,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jir
 ## Installation
 
 ```bash
-npm install @dongitran/jira-mcp-server
+npm install @urcard/jira-mcp-server
 ```
 
 Or clone and install:
