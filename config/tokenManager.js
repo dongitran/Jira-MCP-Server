@@ -24,13 +24,21 @@ class TokenManager {
       throw new Error('Missing required OAuth credentials. Please provide: access_token, refresh_token, client_id, client_secret');
     }
 
-    // Get cloud ID if not set (this is fast, just one API call)
+    // Get cloud ID if not set - do this in background to avoid blocking
     if (!this.cloudId) {
-      await this.fetchCloudId();
+      // Don't await - fetch in background
+      this.fetchCloudId().catch(err => {
+        console.error('Warning: Failed to fetch cloud ID:', err.message);
+      });
+      
+      // Give it a short time to complete
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     console.error('✅ Token manager initialized');
-    console.error(`   Cloud ID: ${this.cloudId}`);
+    if (this.cloudId) {
+      console.error(`   Cloud ID: ${this.cloudId}`);
+    }
     
     // Note: Token validation happens lazily on first use
   }
