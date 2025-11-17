@@ -1,7 +1,7 @@
 {
   "name": "jira-mcp-server",
   "version": "1.0.0",
-  "description": "Jira MCP Server",
+  "description": "A Model Context Protocol (MCP) server for Jira integration with OAuth token-based authentication. Provides 7 powerful tools for task management, search, and automation.",
   "main": "server.js",
   "type": "module",
   "engines": {
@@ -28,8 +28,21 @@
     "mcp",
     "model-context-protocol",
     "oauth",
-    "token-based"
+    "atlassian",
+    "claude",
+    "ai",
+    "automation",
+    "task-management",
+    "agile"
   ],
   "author": "dongtran",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dongitran/Jira-MCP-Server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dongitran/Jira-MCP-Server/issues"
+  },
+  "homepage": "https://github.com/dongitran/Jira-MCP-Server#readme"
 }
