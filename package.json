@@ -1,9 +1,12 @@
 {
   "name": "@urcard/jira-mcp-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Model Context Protocol (MCP) server for Jira integration with OAuth token-based authentication. Provides 7 powerful tools for task management, search, and automation.",
   "main": "server.js",
   "type": "module",
+  "bin": {
+    "jira-mcp-server": "./bin/jira-mcp-server.js"
+  },
   "publishConfig": {
     "access": "public"
   },
