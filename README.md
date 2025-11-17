@@ -273,10 +273,6 @@ jira-mcp-server/
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## License
-
-MIT © [Dong Tran](https://github.com/dongitran)
-
 ## Links
 
 - [GitHub Repository](https://github.com/dongitran/Jira-MCP-Server)
@@ -288,3 +284,15 @@ MIT © [Dong Tran](https://github.com/dongitran)
 If you encounter any issues or have questions:
 - [Open an issue](https://github.com/dongitran/Jira-MCP-Server/issues)
 - Check the [MCP documentation](https://modelcontextprotocol.io/docs)
+
+## 👨‍💻 Author
+
+dongtran ✨
+
+## 📄 License
+
+MIT
+
+---
+
+Made with ❤️ to make your work life easier!
