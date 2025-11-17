@@ -9,7 +9,9 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jir
 
 - ✅ **7 Powerful Tools** - Complete Jira task management
 - ✅ **OAuth Authentication** - Secure token-based auth with auto-refresh
-- ✅ **No Database** - Stateless, config via CLI arguments
+- ✅ **Token Persistence** - Auto-save & reload tokens from `~/.jira-mcp/tokens.cache`
+- ✅ **Cloud ID Caching** - No timeout issues (v1.0.6+)
+- ✅ **No Database** - File-based caching, config via CLI arguments
 - ✅ **Daily Hours Calculation** - Smart workload estimation based on story points
 - ✅ **MCP Protocol** - Works with Claude, Cursor, VS Code, and other MCP clients
 - ✅ **Production Ready** - Clean code, ESLint, Node 18+

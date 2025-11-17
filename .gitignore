@@ -7,3 +7,7 @@ logs/*.log
 coverage/
 .vscode/
 .idea/
+
+# Token cache (contains sensitive data)
+.jira-mcp/
+tokens.cache

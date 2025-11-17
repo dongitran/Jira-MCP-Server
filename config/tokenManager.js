@@ -14,16 +14,35 @@ class TokenManager {
     this.resourcesUrl = 'https://api.atlassian.com/oauth/token/accessible-resources';
     this.cacheDir = path.join(os.homedir(), '.jira-mcp');
     this.cacheFile = path.join(this.cacheDir, 'cloud-id.cache');
+    this.tokenCacheFile = path.join(this.cacheDir, 'tokens.cache');
   }
 
   setCredentials(config) {
-    this.accessToken = config.access_token;
-    this.refreshToken = config.refresh_token;
     this.clientId = config.client_id;
     this.clientSecret = config.client_secret;
-    this.cloudId = config.cloud_id;
     
-    // Try to load cached cloud ID if not provided
+    // Try to load cached tokens first
+    const cachedTokens = this.loadCachedTokens();
+    
+    if (cachedTokens && cachedTokens.clientId === this.clientId) {
+      // Use cached tokens if they match the same client
+      console.error('📦 Loaded cached tokens');
+      this.accessToken = cachedTokens.accessToken;
+      this.refreshToken = cachedTokens.refreshToken;
+      this.cloudId = cachedTokens.cloudId;
+    } else {
+      // Use provided tokens
+      this.accessToken = config.access_token;
+      this.refreshToken = config.refresh_token;
+      this.cloudId = config.cloud_id;
+      
+      // Save to cache
+      if (this.accessToken && this.refreshToken) {
+        this.saveCachedTokens();
+      }
+    }
+    
+    // Try to load cached cloud ID if not set
     if (!this.cloudId) {
       this.cloudId = this.loadCachedCloudId();
     }
@@ -56,6 +75,58 @@ class TokenManager {
       }));
     } catch (error) {
       console.error('Warning: Failed to cache cloud ID:', error.message);
+    }
+  }
+
+  loadCachedTokens() {
+    try {
+      if (fs.existsSync(this.tokenCacheFile)) {
+        const cached = JSON.parse(fs.readFileSync(this.tokenCacheFile, 'utf8'));
+        
+        // Validate token is not expired
+        if (cached.accessToken && cached.refreshToken) {
+          try {
+            const tokenPayload = this.decodeJWT(cached.accessToken);
+            const currentTime = Math.floor(Date.now() / 1000);
+            
+            // If token expires in more than 5 minutes, it's still good
+            if (tokenPayload.exp > currentTime + 300) {
+              console.error('📦 Cached tokens are still valid');
+              return cached;
+            } else {
+              console.error('⚠️  Cached tokens expired, will refresh');
+              return cached; // Return anyway, will be refreshed
+            }
+          } catch (error) {
+            console.error('⚠️  Failed to decode cached token:', error.message);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('⚠️  Failed to load cached tokens:', error.message);
+    }
+    return null;
+  }
+
+  saveCachedTokens() {
+    try {
+      if (!fs.existsSync(this.cacheDir)) {
+        fs.mkdirSync(this.cacheDir, { recursive: true });
+      }
+      
+      const tokenData = {
+        accessToken: this.accessToken,
+        refreshToken: this.refreshToken,
+        cloudId: this.cloudId,
+        clientId: this.clientId,
+        timestamp: Date.now(),
+        lastRefreshed: new Date().toISOString()
+      };
+      
+      fs.writeFileSync(this.tokenCacheFile, JSON.stringify(tokenData, null, 2));
+      console.error('💾 Tokens saved to cache');
+    } catch (error) {
+      console.error('Warning: Failed to cache tokens:', error.message);
     }
   }
 
@@ -129,10 +200,14 @@ class TokenManager {
           timeout: 10000
         });
 
+        // Update tokens in memory
         this.accessToken = response.data.access_token;
         this.refreshToken = response.data.refresh_token;
 
-        console.error('✅ Token refreshed successfully');
+        // Save to cache immediately
+        this.saveCachedTokens();
+
+        console.error('✅ Token refreshed and saved successfully');
         return response.data;
       } catch (error) {
         const isLastAttempt = attempt === retries;

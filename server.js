@@ -43,7 +43,7 @@ jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`
 // Create and setup MCP server
 const mcpServer = new McpServer({
   name: 'jira-mcp-server',
-  version: '1.0.7'
+  version: '1.0.8'
 });
 
 registerJiraTools(mcpServer, jiraService);

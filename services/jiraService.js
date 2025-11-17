@@ -16,6 +16,12 @@ class JiraService {
 
   async makeRequest(endpoint, method = 'GET', data = null) {
     try {
+      // Validate and refresh token if needed
+      await tokenManager.validateAndRefreshToken();
+      
+      // Get fresh token (might have been refreshed)
+      this.accessToken = tokenManager.getAccessToken();
+      
       const config = {
         method,
         url: `${this.baseURL}/rest/api/3${endpoint}`,
