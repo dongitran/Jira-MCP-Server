@@ -1,5 +1,5 @@
 {
-  "name": "jira-mcp-server",
+  "name": "@dongitran/jira-mcp-server",
   "version": "1.0.0",
   "description": "A Model Context Protocol (MCP) server for Jira integration with OAuth token-based authentication. Provides 7 powerful tools for task management, search, and automation.",
   "main": "server.js",
