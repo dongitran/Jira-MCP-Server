@@ -40,27 +40,6 @@ You need Jira OAuth credentials:
 
 ## Configuration
 
-### For Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
-
-```json
-{
-  "mcpServers": {
-    "jira": {
-      "command": "node",
-      "args": [
-        "/path/to/Jira-MCP-Server/server.js",
-        "--access_token", "YOUR_ACCESS_TOKEN",
-        "--refresh_token", "YOUR_REFRESH_TOKEN",
-        "--client_id", "YOUR_CLIENT_ID",
-        "--client_secret", "YOUR_CLIENT_SECRET"
-      ]
-    }
-  }
-}
-```
-
 ### For Cursor
 
 Create `.cursor/mcp.json`:
@@ -82,9 +61,30 @@ Create `.cursor/mcp.json`:
 }
 ```
 
-### For VS Code / Kiro
+### For VS Code
 
 Create `.kiro/settings/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "jira": {
+      "command": "node",
+      "args": [
+        "/path/to/Jira-MCP-Server/server.js",
+        "--access_token", "YOUR_ACCESS_TOKEN",
+        "--refresh_token", "YOUR_REFRESH_TOKEN",
+        "--client_id", "YOUR_CLIENT_ID",
+        "--client_secret", "YOUR_CLIENT_SECRET"
+      ]
+    }
+  }
+}
+```
+
+### For Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
