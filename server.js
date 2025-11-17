@@ -35,30 +35,33 @@ if (!config.access_token || !config.refresh_token || !config.client_id || !confi
   process.exit(1);
 }
 
-// Initialize jiraService synchronously with what we have
+// Initialize jiraService with cached or provided cloud ID
 jiraService.accessToken = config.access_token;
-jiraService.cloudId = config.cloud_id || '03ad0865-37eb-4006-b06f-5284e2f09fa7'; // Default cloud ID
+jiraService.cloudId = tokenManager.cloudId || '03ad0865-37eb-4006-b06f-5284e2f09fa7'; // Use cached or default
 jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`;
 
 // Create and setup MCP server
 const mcpServer = new McpServer({
   name: 'jira-mcp-server',
-  version: '1.0.3'
+  version: '1.0.7'
 });
 
 registerJiraTools(mcpServer, jiraService);
 
-// Connect transport - DON'T await, let it run async
+// Connect transport
 const transport = new StdioServerTransport();
 mcpServer.connect(transport).then(() => {
   console.error('✅ Jira MCP Server Ready');
   
-  // Fetch real cloud ID in background if not provided
+  // Refresh cloud ID in background (non-blocking)
   if (!config.cloud_id) {
     tokenManager.fetchCloudId().then(() => {
       jiraService.cloudId = tokenManager.cloudId;
       jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`;
       console.error(`☁️  Cloud ID updated: ${jiraService.cloudId}`);
-    }).catch(err => console.error('Warning: Could not fetch cloud ID:', err.message));
+    }).catch(err => {
+      // Silently fail - we're using cached/default
+      console.error('⚠️  Could not refresh cloud ID (using cached):', err.message);
+    });
   }
 });

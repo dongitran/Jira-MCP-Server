@@ -1,4 +1,7 @@
 import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 class TokenManager {
   constructor() {
@@ -9,6 +12,8 @@ class TokenManager {
     this.cloudId = null;
     this.tokenUrl = 'https://auth.atlassian.com/oauth/token';
     this.resourcesUrl = 'https://api.atlassian.com/oauth/token/accessible-resources';
+    this.cacheDir = path.join(os.homedir(), '.jira-mcp');
+    this.cacheFile = path.join(this.cacheDir, 'cloud-id.cache');
   }
 
   setCredentials(config) {
@@ -17,6 +22,41 @@ class TokenManager {
     this.clientId = config.client_id;
     this.clientSecret = config.client_secret;
     this.cloudId = config.cloud_id;
+    
+    // Try to load cached cloud ID if not provided
+    if (!this.cloudId) {
+      this.cloudId = this.loadCachedCloudId();
+    }
+  }
+
+  loadCachedCloudId() {
+    try {
+      if (fs.existsSync(this.cacheFile)) {
+        const cached = JSON.parse(fs.readFileSync(this.cacheFile, 'utf8'));
+        // Cache valid for 7 days
+        if (cached.cloudId && cached.timestamp && (Date.now() - cached.timestamp < 7 * 24 * 60 * 60 * 1000)) {
+          console.error('📦 Loaded cached Cloud ID:', cached.cloudId);
+          return cached.cloudId;
+        }
+      }
+    } catch (error) {
+      // Ignore cache errors
+    }
+    return null;
+  }
+
+  saveCachedCloudId(cloudId) {
+    try {
+      if (!fs.existsSync(this.cacheDir)) {
+        fs.mkdirSync(this.cacheDir, { recursive: true });
+      }
+      fs.writeFileSync(this.cacheFile, JSON.stringify({
+        cloudId: cloudId,
+        timestamp: Date.now()
+      }));
+    } catch (error) {
+      console.error('Warning: Failed to cache cloud ID:', error.message);
+    }
   }
 
   async initialize() {
@@ -72,48 +112,78 @@ class TokenManager {
     }
   }
 
-  async refreshAccessToken() {
-    try {
-      const response = await axios.post(this.tokenUrl, {
-        grant_type: 'refresh_token',
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        refresh_token: this.refreshToken
-      }, {
-        headers: {
-          'Content-Type': 'application/json'
+  async refreshAccessToken(retries = 3, delay = 1000) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        console.error(`🔄 Refreshing token (attempt ${attempt}/${retries})...`);
+        
+        const response = await axios.post(this.tokenUrl, {
+          grant_type: 'refresh_token',
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          refresh_token: this.refreshToken
+        }, {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        });
+
+        this.accessToken = response.data.access_token;
+        this.refreshToken = response.data.refresh_token;
+
+        console.error('✅ Token refreshed successfully');
+        return response.data;
+      } catch (error) {
+        const isLastAttempt = attempt === retries;
+        
+        if (isLastAttempt) {
+          console.error(`❌ Token refresh failed after ${retries} attempts:`, error.response?.data || error.message);
+          throw new Error('Failed to refresh access token');
         }
-      });
-
-      this.accessToken = response.data.access_token;
-      this.refreshToken = response.data.refresh_token;
-
-      console.error('✅ Token refreshed successfully');
-      return response.data;
-    } catch (error) {
-      console.error('Token refresh error:', error.response?.data || error.message);
-      throw new Error('Failed to refresh access token');
+        
+        console.error(`⚠️  Attempt ${attempt} failed, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay *= 2;
+      }
     }
   }
 
-  async fetchCloudId() {
-    try {
-      const response = await axios.get(this.resourcesUrl, {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          'Accept': 'application/json'
-        }
-      });
+  async fetchCloudId(retries = 3, delay = 1000) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        console.error(`🔄 Fetching Cloud ID (attempt ${attempt}/${retries})...`);
+        
+        const response = await axios.get(this.resourcesUrl, {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Accept': 'application/json'
+          },
+          timeout: 10000 // 10s timeout
+        });
 
-      if (response.data && response.data.length > 0) {
-        this.cloudId = response.data[0].id;
-        console.error('✅ Fetched Cloud ID:', this.cloudId);
-      } else {
-        throw new Error('No accessible resources found');
+        if (response.data && response.data.length > 0) {
+          this.cloudId = response.data[0].id;
+          this.saveCachedCloudId(this.cloudId);
+          console.error('✅ Fetched Cloud ID:', this.cloudId);
+          return;
+        } else {
+          throw new Error('No accessible resources found');
+        }
+      } catch (error) {
+        const isLastAttempt = attempt === retries;
+        
+        if (isLastAttempt) {
+          console.error(`❌ Failed to fetch cloud ID after ${retries} attempts:`, error.message);
+          throw error;
+        }
+        
+        console.error(`⚠️  Attempt ${attempt} failed: ${error.message}, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Exponential backoff
+        delay *= 2;
       }
-    } catch (error) {
-      console.error('Failed to fetch cloud ID:', error.message);
-      throw error;
     }
   }
 
