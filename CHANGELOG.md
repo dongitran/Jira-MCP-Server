@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.9] - 2025-11-17
+
+### Changed
+- **Removed Cloud ID fetch**: No longer fetch Cloud ID from API (eliminates timeout issues)
+- **Hardcoded Cloud ID**: Use Cloud ID from CLI arg `--cloud_id` or cached value
+- **Faster startup**: Instant initialization without API calls
+
+### Fixed
+- Initialize timeout issues (60s timeout eliminated)
+- Server now responds immediately to MCP client
+
 ## [1.0.8] - 2025-11-17
 
 ### Added
