@@ -10,7 +10,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jir
 - ✅ **7 Powerful Tools** - Complete Jira task management
 - ✅ **OAuth Authentication** - Secure token-based auth with auto-refresh
 - ✅ **Token Persistence** - Auto-save & reload tokens from `~/.jira-mcp/tokens.cache`
-- ✅ **Cloud ID Caching** - No timeout issues (v1.0.6+)
+- ✅ **Instant Startup** - No API calls during initialization (v1.0.9+)
 - ✅ **No Database** - File-based caching, config via CLI arguments
 - ✅ **Daily Hours Calculation** - Smart workload estimation based on story points
 - ✅ **MCP Protocol** - Works with Claude, Cursor, VS Code, and other MCP clients
@@ -37,52 +37,17 @@ You need Jira OAuth credentials:
 - `refresh_token` - OAuth refresh token  
 - `client_id` - OAuth client ID
 - `client_secret` - OAuth client secret
+- `cloud_id` - Atlassian Cloud ID
 
-[How to get Jira OAuth credentials →](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/)
+**🚀 Easy way to get credentials:** Use our [OAuth Token Generator](https://github.com/dongitran/Jira-Oauth-Token-Generator) - it provides ready-to-use MCP config with all required credentials including `cloud_id`!
+
+Or manually: [How to get Jira OAuth credentials →](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/)
 
 ## Configuration
 
-### For Cursor
+### Quick Setup (Recommended)
 
-Create `.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "jira": {
-      "command": "node",
-      "args": [
-        "/path/to/Jira-MCP-Server/server.js",
-        "--access_token", "YOUR_ACCESS_TOKEN",
-        "--refresh_token", "YOUR_REFRESH_TOKEN",
-        "--client_id", "YOUR_CLIENT_ID",
-        "--client_secret", "YOUR_CLIENT_SECRET"
-      ]
-    }
-  }
-}
-```
-
-### For VS Code
-
-Create `.kiro/settings/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "jira": {
-      "command": "node",
-      "args": [
-        "/path/to/Jira-MCP-Server/server.js",
-        "--access_token", "YOUR_ACCESS_TOKEN",
-        "--refresh_token", "YOUR_REFRESH_TOKEN",
-        "--client_id", "YOUR_CLIENT_ID",
-        "--client_secret", "YOUR_CLIENT_SECRET"
-      ]
-    }
-  }
-}
-```
+Use our [OAuth Token Generator](https://github.com/dongitran/Jira-Oauth-Token-Generator) to get ready-to-use config with all credentials including `cloud_id`. Just copy and paste!
 
 ### For Claude Desktop
 
@@ -92,18 +57,65 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 {
   "mcpServers": {
     "jira": {
-      "command": "node",
+      "command": "jira-mcp-server",
       "args": [
-        "/path/to/Jira-MCP-Server/server.js",
         "--access_token", "YOUR_ACCESS_TOKEN",
         "--refresh_token", "YOUR_REFRESH_TOKEN",
         "--client_id", "YOUR_CLIENT_ID",
-        "--client_secret", "YOUR_CLIENT_SECRET"
-      ]
+        "--client_secret", "YOUR_CLIENT_SECRET",
+        "--cloud_id", "YOUR_CLOUD_ID"
+      ],
+      "env": {}
     }
   }
 }
 ```
+
+### For Cursor
+
+Create `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "jira": {
+      "command": "jira-mcp-server",
+      "args": [
+        "--access_token", "YOUR_ACCESS_TOKEN",
+        "--refresh_token", "YOUR_REFRESH_TOKEN",
+        "--client_id", "YOUR_CLIENT_ID",
+        "--client_secret", "YOUR_CLIENT_SECRET",
+        "--cloud_id", "YOUR_CLOUD_ID"
+      ],
+      "env": {}
+    }
+  }
+}
+```
+
+### For VS Code (Kiro)
+
+Create `.kiro/settings/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "jira": {
+      "command": "jira-mcp-server",
+      "args": [
+        "--access_token", "YOUR_ACCESS_TOKEN",
+        "--refresh_token", "YOUR_REFRESH_TOKEN",
+        "--client_id", "YOUR_CLIENT_ID",
+        "--client_secret", "YOUR_CLIENT_SECRET",
+        "--cloud_id", "YOUR_CLOUD_ID"
+      ],
+      "env": {}
+    }
+  }
+}
+```
+
+**Note:** After first run, tokens are cached to `~/.jira-mcp/tokens.cache` and will auto-refresh. You only need to provide credentials once!
 
 ## Available Tools
 
