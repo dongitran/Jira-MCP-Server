@@ -48,17 +48,17 @@ const mcpServer = new McpServer({
 
 registerJiraTools(mcpServer, jiraService);
 
-// Connect transport
+// Connect transport - DON'T await, let it run async
 const transport = new StdioServerTransport();
-await mcpServer.connect(transport);
-
-console.error('✅ Jira MCP Server Ready');
-
-// Fetch real cloud ID in background if not provided
-if (!config.cloud_id) {
-  tokenManager.fetchCloudId().then(() => {
-    jiraService.cloudId = tokenManager.cloudId;
-    jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`;
-    console.error(`☁️  Cloud ID updated: ${jiraService.cloudId}`);
-  }).catch(err => console.error('Warning: Could not fetch cloud ID:', err.message));
-}
+mcpServer.connect(transport).then(() => {
+  console.error('✅ Jira MCP Server Ready');
+  
+  // Fetch real cloud ID in background if not provided
+  if (!config.cloud_id) {
+    tokenManager.fetchCloudId().then(() => {
+      jiraService.cloudId = tokenManager.cloudId;
+      jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`;
+      console.error(`☁️  Cloud ID updated: ${jiraService.cloudId}`);
+    }).catch(err => console.error('Warning: Could not fetch cloud ID:', err.message));
+  }
+});
