@@ -25,38 +25,40 @@ function parseArgs() {
 
 const config = parseArgs();
 
-// Set credentials from command line arguments
+// Set credentials - this is instant
 tokenManager.setCredentials(config);
 
-// Create MCP server FIRST
+// Quick sync init - just validate credentials exist
+if (!config.access_token || !config.refresh_token || !config.client_id || !config.client_secret) {
+  console.error('❌ Missing required OAuth credentials');
+  console.error('Usage: jira-mcp-server --access_token <token> --refresh_token <token> --client_id <id> --client_secret <secret>');
+  process.exit(1);
+}
+
+// Initialize jiraService synchronously with what we have
+jiraService.accessToken = config.access_token;
+jiraService.cloudId = config.cloud_id || '03ad0865-37eb-4006-b06f-5284e2f09fa7'; // Default cloud ID
+jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`;
+
+// Create and setup MCP server
 const mcpServer = new McpServer({
   name: 'jira-mcp-server',
-  version: '1.0.0'
+  version: '1.0.3'
 });
 
-// Register tools with empty jiraService initially
 registerJiraTools(mcpServer, jiraService);
 
-// Connect via stdio transport IMMEDIATELY
+// Connect transport
 const transport = new StdioServerTransport();
 await mcpServer.connect(transport);
 
-console.error('🚀 Jira MCP Server connected, initializing...');
+console.error('✅ Jira MCP Server Ready');
 
-// Initialize in background AFTER connection
-(async () => {
-  try {
-    await tokenManager.initialize();
-    await jiraService.initialize();
-    
-    console.error('');
-    console.error('✅ Jira MCP Server Ready');
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.error(`☁️  Jira Cloud ID: ${jiraService.cloudId}`);
-    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.error('');
-  } catch (error) {
-    console.error('❌ Initialization failed:', error.message);
-    console.error('Server will not function properly');
-  }
-})();
+// Fetch real cloud ID in background if not provided
+if (!config.cloud_id) {
+  tokenManager.fetchCloudId().then(() => {
+    jiraService.cloudId = tokenManager.cloudId;
+    jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`;
+    console.error(`☁️  Cloud ID updated: ${jiraService.cloudId}`);
+  }).catch(err => console.error('Warning: Could not fetch cloud ID:', err.message));
+}
