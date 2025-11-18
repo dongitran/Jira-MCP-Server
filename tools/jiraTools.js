@@ -9,14 +9,14 @@ export function registerJiraTools(mcpServer, jiraService) {
     {
       title: 'Get My Tasks',
       description: 'Get tasks assigned to current user with various filters',
-      inputSchema: {
+      inputSchema: z.object({
         filter: z.enum(['todo', 'today', 'in-progress', 'high-priority', 'overdue', 'completed', 'all'])
           .default('all')
           .describe('Filter type for tasks'),
         period: z.enum(['today', 'week', 'month']).optional()
           .describe('Period for completed tasks filter')
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         total: z.number(),
         tasks: z.array(z.object({
           key: z.string(),
@@ -25,7 +25,7 @@ export function registerJiraTools(mcpServer, jiraService) {
           priority: z.string(),
           dueDate: z.string().nullable()
         }))
-      }
+      })
     },
     async ({ filter, period }) => {
       const user = await jiraService.getCurrentUser();
@@ -99,11 +99,11 @@ export function registerJiraTools(mcpServer, jiraService) {
     {
       title: 'Get Tasks by Date',
       description: 'Get tasks active on a specific date (between start date and due date)',
-      inputSchema: {
+      inputSchema: z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
           .describe('Date in YYYY-MM-DD format')
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         date: z.string(),
         total: z.number(),
         totalDailyHours: z.number(),
@@ -114,7 +114,7 @@ export function registerJiraTools(mcpServer, jiraService) {
           storyPoints: z.number(),
           dailyHours: z.number()
         }))
-      }
+      })
     },
     async ({ date }) => {
       const user = await jiraService.getCurrentUser();
@@ -219,18 +219,18 @@ export function registerJiraTools(mcpServer, jiraService) {
     {
       title: 'Search Tasks',
       description: 'Search tasks using JQL query or keyword',
-      inputSchema: {
+      inputSchema: z.object({
         query: z.string().describe('JQL query or keyword to search'),
         maxResults: z.number().default(50).describe('Maximum number of results')
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         total: z.number(),
         tasks: z.array(z.object({
           key: z.string(),
           summary: z.string(),
           status: z.string()
         }))
-      }
+      })
     },
     async ({ query, maxResults }) => {
       const user = await jiraService.getCurrentUser();
@@ -274,7 +274,7 @@ export function registerJiraTools(mcpServer, jiraService) {
     {
       title: 'Create Task',
       description: 'Create a new Jira task with optional subtasks',
-      inputSchema: {
+      inputSchema: z.object({
         project: z.string().describe('Project key (e.g., "URC", "PROJ")'),
         summary: z.string().describe('Task title/summary'),
         description: z.string().optional().describe('Task description'),
@@ -288,15 +288,15 @@ export function registerJiraTools(mcpServer, jiraService) {
           description: z.string().optional(),
           storyPoints: z.number().optional()
         })).optional().describe('Array of subtasks')
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         success: z.boolean(),
         task: z.object({
           key: z.string(),
           summary: z.string(),
           url: z.string()
         })
-      }
+      })
     },
     async ({ project, summary, description, issueType, priority, storyPoints, startDate, dueDate, subtasks }) => {
       const user = await jiraService.getCurrentUser();
@@ -385,16 +385,16 @@ export function registerJiraTools(mcpServer, jiraService) {
     {
       title: 'Update Task Dates',
       description: 'Update start date and/or due date of a task',
-      inputSchema: {
+      inputSchema: z.object({
         taskKey: z.string().describe('Task key (e.g., "URC-123")'),
         startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
         dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)')
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         success: z.boolean(),
         taskKey: z.string(),
         updatedFields: z.array(z.string())
-      }
+      })
     },
     async ({ taskKey, startDate, dueDate }) => {
       const updateFields = {};
@@ -432,15 +432,15 @@ export function registerJiraTools(mcpServer, jiraService) {
     {
       title: 'Update Story Points',
       description: 'Update story points of a task',
-      inputSchema: {
+      inputSchema: z.object({
         taskKey: z.string().describe('Task key (e.g., "URC-123")'),
         storyPoints: z.number().describe('Story points value')
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         success: z.boolean(),
         taskKey: z.string(),
         storyPoints: z.number()
-      }
+      })
     },
     async ({ taskKey, storyPoints }) => {
       await jiraService.updateIssue(taskKey, {
@@ -468,10 +468,10 @@ export function registerJiraTools(mcpServer, jiraService) {
     {
       title: 'Get Task Details',
       description: 'Get detailed information about a specific task',
-      inputSchema: {
+      inputSchema: z.object({
         taskKey: z.string().describe('Task key (e.g., "URC-123")')
-      },
-      outputSchema: {
+      }),
+      outputSchema: z.object({
         key: z.string(),
         summary: z.string(),
         description: z.string().nullable(),
@@ -479,7 +479,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         priority: z.string(),
         assignee: z.string(),
         storyPoints: z.number().nullable()
-      }
+      })
     },
     async ({ taskKey }) => {
       const issue = await jiraService.getIssue(
@@ -510,6 +510,4 @@ export function registerJiraTools(mcpServer, jiraService) {
       };
     }
   );
-
-  console.error('✅ Registered 7 Jira MCP tools');
 }
