@@ -70,8 +70,12 @@ export function registerJiraTools(mcpServer, jiraService) {
       }
 
       const result = await jiraService.searchIssues(jql);
-      
-      const tasks = result.issues.map(issue => ({
+
+      // Ensure result has required fields
+      const issues = result.issues || [];
+      const total = typeof result.total === 'number' ? result.total : issues.length;
+
+      const tasks = issues.map(issue => ({
         key: issue.key,
         summary: issue.fields.summary,
         status: issue.fields.status.name,
@@ -81,7 +85,7 @@ export function registerJiraTools(mcpServer, jiraService) {
       }));
 
       const output = {
-        total: result.total,
+        total: total,
         filter: filter,
         tasks: tasks
       };
@@ -286,7 +290,9 @@ export function registerJiraTools(mcpServer, jiraService) {
         subtasks: z.array(z.object({
           summary: z.string(),
           description: z.string().optional(),
-          storyPoints: z.number().optional()
+          storyPoints: z.number().optional(),
+          startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
+          dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)')
         })).optional().describe('Array of subtasks')
       }),
       outputSchema: z.object({
@@ -347,8 +353,10 @@ export function registerJiraTools(mcpServer, jiraService) {
               }]
             };
           }
-          
+
           if (subtask.storyPoints) subtaskFields.customfield_10016 = subtask.storyPoints;
+          if (subtask.startDate) subtaskFields.customfield_10015 = subtask.startDate;
+          if (subtask.dueDate) subtaskFields.duedate = subtask.dueDate;
           
           try {
             const createdSubtask = await jiraService.createIssue({ fields: subtaskFields });
@@ -502,6 +510,299 @@ export function registerJiraTools(mcpServer, jiraService) {
         hasSubtasks: issue.fields.subtasks && issue.fields.subtasks.length > 0,
         subtasksCount: issue.fields.subtasks ? issue.fields.subtasks.length : 0,
         url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
+
+  // Tool 8: Create Subtask
+  mcpServer.registerTool(
+    'create_subtask',
+    {
+      title: 'Create Subtask',
+      description: 'Create a new subtask for an existing parent task with full field support',
+      inputSchema: z.object({
+        parentTaskKey: z.string().describe('Parent task key (e.g., "URC-3524")'),
+        summary: z.string().describe('Subtask title/summary'),
+        description: z.string().optional().describe('Subtask description'),
+        storyPoints: z.number().optional().describe('Story points'),
+        startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
+        dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)')
+      }),
+      outputSchema: z.object({
+        success: z.boolean(),
+        subtask: z.object({
+          key: z.string(),
+          summary: z.string(),
+          parentKey: z.string(),
+          url: z.string()
+        })
+      })
+    },
+    async ({ parentTaskKey, summary, description, storyPoints, startDate, dueDate }) => {
+      // Get current user to assign subtask
+      const user = await jiraService.getCurrentUser();
+
+      // Get parent task to get project information
+      const parentTask = await jiraService.getIssue(parentTaskKey, 'project');
+      const projectKey = parentTask.fields.project.key;
+
+      // Build subtask fields
+      const subtaskFields = {
+        project: { key: projectKey },
+        summary: summary,
+        issuetype: { name: 'Subtask' },
+        parent: { key: parentTaskKey },
+        assignee: { accountId: user.accountId }
+      };
+
+      // Add optional description
+      if (description) {
+        subtaskFields.description = {
+          type: 'doc',
+          version: 1,
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: description }]
+          }]
+        };
+      }
+
+      // Add optional fields
+      if (storyPoints) subtaskFields.customfield_10016 = storyPoints;
+      if (startDate) subtaskFields.customfield_10015 = startDate;
+      if (dueDate) subtaskFields.duedate = dueDate;
+
+      // Create subtask
+      const createdSubtask = await jiraService.createIssue({ fields: subtaskFields });
+
+      const output = {
+        success: true,
+        subtask: {
+          key: createdSubtask.key,
+          summary: summary,
+          parentKey: parentTaskKey,
+          assignedTo: user.displayName,
+          storyPoints: storyPoints || null,
+          startDate: startDate || null,
+          dueDate: dueDate || null,
+          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${createdSubtask.key}`
+        }
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
+
+  // Tool 9: Get Monthly Hours
+  mcpServer.registerTool(
+    'get_monthly_hours',
+    {
+      title: 'Get Monthly Hours',
+      description: 'Calculate total monthly hours based on Story Points and working days for current month',
+      inputSchema: z.object({
+        includeCompleted: z.boolean().default(true).describe('Include completed tasks (default: true)')
+      }),
+      outputSchema: z.object({
+        period: z.string(),
+        totalMonthlyHours: z.number(),
+        totalMonthlyDays: z.number(),
+        entries: z.number(),
+        breakdown: z.array(z.object({
+          key: z.string(),
+          summary: z.string(),
+          monthlyHours: z.number()
+        }))
+      })
+    },
+    async ({ includeCompleted }) => {
+      const user = await jiraService.getCurrentUser();
+
+      // Vietnamese holidays for 2025
+      const vietnameseHolidays = [
+        '2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31', '2025-02-03',
+        '2025-04-18', '2025-04-30', '2025-05-01', '2025-09-01', '2025-09-02'
+      ];
+
+      const isVietnameseHoliday = (date) => {
+        return vietnameseHolidays.includes(moment(date).format('YYYY-MM-DD'));
+      };
+
+      // Calculate working days between two dates
+      const getWorkingDaysBetween = (startDate, endDate) => {
+        if (!startDate || !endDate) return 1;
+        let workingDays = 0;
+        let current = moment(startDate);
+        const endMoment = moment(endDate);
+
+        while (current.isSameOrBefore(endMoment)) {
+          if (current.day() >= 1 && current.day() <= 5 && !isVietnameseHoliday(current)) {
+            workingDays++;
+          }
+          current.add(1, 'day');
+        }
+        return workingDays > 0 ? workingDays : 1;
+      };
+
+      // Calculate working days in current month for a task
+      const getWorkingDaysInCurrentMonth = (taskStartDate, taskEndDate) => {
+        const monthStart = moment().startOf('month');
+        const monthEnd = moment().endOf('month');
+
+        const effectiveStart = taskStartDate ? moment.max(moment(taskStartDate), monthStart) : monthStart;
+        const effectiveEnd = taskEndDate ? moment.min(moment(taskEndDate), monthEnd) : monthEnd;
+
+        return getWorkingDaysBetween(effectiveStart, effectiveEnd);
+      };
+
+      // Calculate monthly hours for a task
+      const calculateMonthlyHours = (storyPoints, taskStartDate, taskEndDate) => {
+        if (!storyPoints || storyPoints <= 0) {
+          return {
+            monthlyHours: 0,
+            totalHours: 0,
+            totalWorkingDays: 0,
+            currentMonthWorkingDays: 0,
+            calculation: 'No story points assigned'
+          };
+        }
+
+        const endDate = taskEndDate || moment().format('YYYY-MM-DD');
+        const totalHours = storyPoints * 2;
+        const totalWorkingDays = getWorkingDaysBetween(taskStartDate, endDate);
+        const currentMonthWorkingDays = getWorkingDaysInCurrentMonth(taskStartDate, endDate);
+        const monthlyHours = totalWorkingDays > 0
+          ? (totalHours / totalWorkingDays) * currentMonthWorkingDays
+          : 0;
+
+        return {
+          monthlyHours: Math.round(monthlyHours * 100) / 100,
+          totalHours,
+          totalWorkingDays,
+          currentMonthWorkingDays,
+          calculation: `(${storyPoints} SP × 2) / ${totalWorkingDays} working days × ${currentMonthWorkingDays} days in current month = ${Math.round(monthlyHours * 100) / 100} hours`
+        };
+      };
+
+      // Check if task spans multiple months
+      const spansMultipleMonths = (startDate, endDate) => {
+        if (!endDate) endDate = moment().format('YYYY-MM-DD');
+        const start = moment(startDate).startOf('month');
+        const end = moment(endDate).startOf('month');
+        return !start.isSame(end, 'month');
+      };
+
+      // Get current month period
+      const currentMonth = {
+        startDate: moment().startOf('month').format('YYYY-MM-DD'),
+        endDate: moment().endOf('month').format('YYYY-MM-DD'),
+        monthName: moment().format('MMMM YYYY')
+      };
+
+      // Build JQL query
+      let jql = `assignee = "${user.accountId}" AND created <= "${currentMonth.endDate}"`;
+
+      if (!includeCompleted) {
+        jql += ` AND status NOT IN ("Done", "Closed", "Resolved")`;
+      } else {
+        jql += ` AND (status NOT IN ("Done", "Closed", "Resolved") OR resolved >= "${currentMonth.startDate}")`;
+      }
+
+      // Search for tasks
+      const result = await jiraService.searchIssues(
+        jql,
+        'summary,key,status,issuetype,subtasks,duedate,created,customfield_10015,customfield_10016,resolved'
+      );
+
+      let totalMonthlyHours = 0;
+      const breakdown = [];
+      const crossMonthTasks = [];
+
+      // Process each task
+      result.issues.forEach(issue => {
+        const hasSubtasks = issue.fields.subtasks && issue.fields.subtasks.length > 0;
+        const isSubtask = issue.fields.issuetype.subtask;
+
+        // Exclude parent tasks with subtasks to avoid double counting
+        if (hasSubtasks && !isSubtask) {
+          return;
+        }
+
+        // Only process tasks with story points
+        if (!issue.fields.customfield_10016) {
+          return;
+        }
+
+        const storyPoints = issue.fields.customfield_10016;
+        const startDate = issue.fields.customfield_10015 || issue.fields.created;
+        const endDate = issue.fields.duedate || moment().format('YYYY-MM-DD');
+
+        // Calculate monthly hours
+        const calculation = calculateMonthlyHours(storyPoints, startDate, endDate);
+
+        // Only include if it contributes hours to current month
+        if (calculation.monthlyHours <= 0) {
+          return;
+        }
+
+        totalMonthlyHours += calculation.monthlyHours;
+
+        const taskData = {
+          key: issue.key,
+          summary: issue.fields.summary,
+          storyPoints: storyPoints,
+          status: issue.fields.status.name,
+          type: issue.fields.issuetype.name,
+          isSubtask: isSubtask,
+          hasSubtasks: hasSubtasks,
+          startDate: moment(startDate).format('YYYY-MM-DD'),
+          endDate: moment(endDate).format('YYYY-MM-DD'),
+          dueDate: issue.fields.duedate ? moment(issue.fields.duedate).format('YYYY-MM-DD') : null,
+          resolvedDate: issue.fields.resolved ? moment(issue.fields.resolved).format('YYYY-MM-DD') : null,
+          monthlyHours: calculation.monthlyHours,
+          totalHours: calculation.totalHours,
+          totalWorkingDays: calculation.totalWorkingDays,
+          currentMonthWorkingDays: calculation.currentMonthWorkingDays,
+          calculation: calculation.calculation,
+          spansMultipleMonths: spansMultipleMonths(startDate, endDate),
+          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+        };
+
+        breakdown.push(taskData);
+
+        if (taskData.spansMultipleMonths) {
+          crossMonthTasks.push(taskData);
+        }
+      });
+
+      // Sort by monthly hours descending
+      breakdown.sort((a, b) => b.monthlyHours - a.monthlyHours);
+
+      const output = {
+        period: currentMonth.monthName,
+        type: 'monthly-hours',
+        totalMonthlyHours: Math.round(totalMonthlyHours * 100) / 100,
+        totalMonthlyDays: Math.round((totalMonthlyHours / 8) * 100) / 100,
+        entries: breakdown.length,
+        crossMonthTasksCount: crossMonthTasks.length,
+        breakdown,
+        crossMonthTasks,
+        summary: {
+          currentMonth: currentMonth.monthName,
+          totalTasksAnalyzed: result.total,
+          tasksWithStoryPoints: breakdown.length,
+          tasksSpanningMultipleMonths: crossMonthTasks.length,
+          averageMonthlyHoursPerTask: breakdown.length > 0
+            ? Math.round((totalMonthlyHours / breakdown.length) * 100) / 100
+            : 0
+        }
       };
 
       return {

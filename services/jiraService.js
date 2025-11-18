@@ -1,5 +1,6 @@
 import axios from 'axios';
 import tokenManager from '../config/tokenManager.js';
+import logger from '../utils/logger.js';
 
 class JiraService {
   constructor() {
@@ -39,7 +40,13 @@ class JiraService {
       const response = await axios(config);
       return response.data;
     } catch (error) {
-      console.error(`Jira API error for ${endpoint}:`, error.response?.data || error.message);
+      // Log to file instead of console to avoid breaking MCP stdio communication
+      logger.error(`Jira API error for ${endpoint}`, {
+        endpoint,
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
       throw error;
     }
   }
@@ -55,12 +62,9 @@ class JiraService {
       fields: fields ? fields.split(',') : ['summary', 'status', 'assignee', 'priority', 'duedate', 'created', 'updated', 'issuetype', 'project']
     };
 
-    try {
-      return await this.makeRequest('/search/jql', 'POST', requestBody);
-    } catch {
-      console.log('Trying fallback /search endpoint');
-      return await this.makeRequest('/search', 'POST', requestBody);
-    }
+    // Use only /search/jql (the correct API endpoint)
+    // The /search endpoint has been removed by Atlassian
+    return await this.makeRequest('/search/jql', 'POST', requestBody);
   }
 
   async getIssue(issueKey, fields = null) {
