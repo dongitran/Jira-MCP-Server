@@ -7,12 +7,12 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jir
 
 ## Features
 
-- ✅ **7 Powerful Tools** - Complete Jira task management
+- ✅ **9 Powerful Tools** - Complete Jira task management
 - ✅ **OAuth Authentication** - Secure token-based auth with auto-refresh
 - ✅ **Token Persistence** - Auto-save & reload tokens from `~/.jira-mcp/tokens.cache`
 - ✅ **Instant Startup** - No API calls during initialization (v1.0.9+)
 - ✅ **No Database** - File-based caching, config via CLI arguments
-- ✅ **Daily Hours Calculation** - Smart workload estimation based on story points
+- ✅ **Daily & Monthly Hours Calculation** - Smart workload estimation based on story points
 - ✅ **MCP Protocol** - Works with Claude, Cursor, VS Code, and other MCP clients
 - ✅ **Production Ready** - Clean code, ESLint, Node 18+
 
@@ -34,7 +34,7 @@ npm install
 
 You need Jira OAuth credentials:
 - `access_token` - OAuth access token
-- `refresh_token` - OAuth refresh token  
+- `refresh_token` - OAuth refresh token
 - `client_id` - OAuth client ID
 - `client_secret` - OAuth client secret
 - `cloud_id` - Atlassian Cloud ID
@@ -93,9 +93,9 @@ Create `.cursor/mcp.json`:
 }
 ```
 
-### For VS Code (Kiro)
+### For VS Code
 
-Create `.kiro/settings/mcp.json`:
+Add to `~/Library/Application Support/Code/User/mcp.json` (macOS):
 
 ```json
 {
@@ -212,15 +212,85 @@ Update story points of a task.
 - `taskKey`: Task key (required)
 - `storyPoints`: Story points value (required)
 
-### 7. `get_task_details`
-Get detailed information about a specific task.
+### 7. `update_task`
+Update task fields including title, description, dates, and story points.
+
+**Parameters:**
+- `taskKey`: Task key (required)
+- `title`: Task title/summary (optional)
+- `description`: Task description (optional)
+- `startDate`: Start date YYYY-MM-DD (optional)
+- `dueDate`: Due date YYYY-MM-DD (optional)
+- `storyPoints`: Story points value (optional)
+
+**Example:**
+```json
+{
+  "taskKey": "URC-123",
+  "title": "Updated task title",
+  "description": "Updated description",
+  "storyPoints": 8
+}
+```
+
+### 8. `get_task_details`
+Get detailed information about a specific task including all subtasks.
 
 **Parameters:**
 - `taskKey`: Task key (required)
 
-## Daily Hours Calculation
+**Example:**
+```json
+{
+  "taskKey": "URC-123"
+}
+```
 
-The `get_tasks_by_date` tool calculates daily hours intelligently:
+### 9. `create_subtask`
+Create a new subtask for an existing parent task.
+
+**Parameters:**
+- `parentTaskKey`: Parent task key (required)
+- `summary`: Subtask title (required)
+- `description`: Subtask description (optional)
+- `storyPoints`: Story points (optional)
+- `startDate`: Start date YYYY-MM-DD (optional)
+- `dueDate`: Due date YYYY-MM-DD (optional)
+
+**Example:**
+```json
+{
+  "parentTaskKey": "URC-123",
+  "summary": "Implement API endpoint",
+  "storyPoints": 3,
+  "dueDate": "2025-01-20"
+}
+```
+
+### 10. `get_monthly_hours`
+Calculate total monthly hours based on Story Points and working days.
+
+**Parameters:**
+- `includeCompleted`: Include completed tasks (default: true)
+
+**Example:**
+```json
+{
+  "includeCompleted": true
+}
+```
+
+**Features:**
+- Calculates hours distribution across months
+- Excludes weekends and Vietnamese holidays
+- Handles tasks spanning multiple months
+- Provides detailed breakdown per task
+
+## Daily & Monthly Hours Calculation
+
+### Daily Hours (`get_tasks_by_date`)
+
+Calculates daily hours intelligently:
 
 - **Formula**: `Daily Hours = (Story Points × 2) ÷ Working Days`
 - **Working Days**: Monday-Friday, excluding Vietnamese holidays
@@ -230,6 +300,21 @@ The `get_tasks_by_date` tool calculates daily hours intelligently:
 - Task: 5 story points
 - Duration: 5 working days
 - Daily Hours: (5 × 2) ÷ 5 = 2 hours/day
+
+### Monthly Hours (`get_monthly_hours`)
+
+Calculates monthly hours distribution:
+
+- **Formula**: `Monthly Hours = (Total Hours ÷ Total Working Days) × Working Days in Month`
+- **Cross-Month Tasks**: Automatically calculates portion for current month
+- **Working Days**: Monday-Friday, excluding Vietnamese holidays
+- **Completed Tasks**: Optionally include/exclude
+
+**Example:**
+- Task: 10 story points, spans 20 working days
+- Total Hours: 10 × 2 = 20 hours
+- Current month has 10 working days for this task
+- Monthly Hours: (20 ÷ 20) × 10 = 10 hours
 
 ## Development
 
@@ -251,6 +336,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Links
 
 - [GitHub Repository](https://github.com/dongitran/Jira-MCP-Server)
+- [OAuth Token Generator](https://github.com/dongitran/Jira-Oauth-Token-Generator)
 - [Model Context Protocol](https://modelcontextprotocol.io)
 - [Jira Cloud Platform](https://developer.atlassian.com/cloud/jira/platform/)
 
