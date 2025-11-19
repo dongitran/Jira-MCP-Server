@@ -2,12 +2,14 @@
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jira integration with OAuth token-based authentication. No database required - all configuration via command-line arguments.
 
+[![npm version](https://img.shields.io/npm/v/@urcard/jira-mcp-server.svg)](https://www.npmjs.com/package/@urcard/jira-mcp-server)
+[![npm downloads](https://img.shields.io/npm/dm/@urcard/jira-mcp-server.svg)](https://www.npmjs.com/package/@urcard/jira-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
 
 ## Features
 
-- ✅ **9 Powerful Tools** - Complete Jira task management
+- ✅ **10 Powerful Tools** - Complete Jira task management
 - ✅ **OAuth Authentication** - Secure token-based auth with auto-refresh
 - ✅ **Token Persistence** - Auto-save & reload tokens from `~/.jira-mcp/tokens.cache`
 - ✅ **Instant Startup** - No API calls during initialization (v1.0.9+)
