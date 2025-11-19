@@ -1,6 +1,6 @@
 # Jira MCP Server
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jira integration with OAuth token-based authentication. No database required - all configuration via command-line arguments.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jira integration with OAuth authentication.
 
 [![npm version](https://img.shields.io/npm/v/@urcard/jira-mcp-server.svg)](https://www.npmjs.com/package/@urcard/jira-mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/@urcard/jira-mcp-server.svg)](https://www.npmjs.com/package/@urcard/jira-mcp-server)
@@ -9,23 +9,19 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jir
 
 ## Features
 
-- ✅ **10 Powerful Tools** - Complete Jira task management
-- ✅ **OAuth Authentication** - Secure token-based auth with auto-refresh
-- ✅ **Token Persistence** - Auto-save & reload tokens from `~/.jira-mcp/tokens.cache`
-- ✅ **Instant Startup** - No API calls during initialization (v1.0.9+)
-- ✅ **No Database** - File-based caching, config via CLI arguments
-- ✅ **Daily & Monthly Hours Calculation** - Smart workload estimation based on story points
-- ✅ **MCP Protocol** - Works with Claude, Cursor, VS Code, and other MCP clients
-- ✅ **Production Ready** - Clean code, ESLint, Node 18+
+- ✅ **10 Powerful Tools** - Complete task management with daily & monthly hours tracking
+- ✅ **OAuth Authentication** - Secure auto-refresh tokens
+- ✅ **Zero Configuration** - No database, CLI-based setup
+- ✅ **MCP Compatible** - Works with Claude, Cursor, VS Code
 
 ## Installation
 
+**Global install (recommended):**
 ```bash
-npm install @urcard/jira-mcp-server
+npm install -g @urcard/jira-mcp-server
 ```
 
-Or clone and install:
-
+**Or clone from source:**
 ```bash
 git clone https://github.com/dongitran/Jira-MCP-Server.git
 cd Jira-MCP-Server
