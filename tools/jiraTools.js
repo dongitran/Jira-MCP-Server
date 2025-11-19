@@ -470,6 +470,84 @@ export function registerJiraTools(mcpServer, jiraService) {
     }
   );
 
+  // Tool 6b: Update Task (Comprehensive)
+  mcpServer.registerTool(
+    'update_task',
+    {
+      title: 'Update Task',
+      description: 'Update task fields including title, description, dates, and story points. Only provided fields will be updated.',
+      inputSchema: z.object({
+        taskKey: z.string().describe('Task key (e.g., "URC-123")'),
+        title: z.string().optional().describe('Task title/summary'),
+        description: z.string().optional().describe('Task description'),
+        startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
+        dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)'),
+        storyPoints: z.number().optional().describe('Story points value')
+      }),
+      outputSchema: z.object({
+        success: z.boolean(),
+        taskKey: z.string(),
+        updatedFields: z.array(z.string())
+      })
+    },
+    async ({ taskKey, title, description, startDate, dueDate, storyPoints }) => {
+      const updateFields = {};
+      const updatedFieldsList = [];
+
+      // Update title (summary)
+      if (title) {
+        updateFields.summary = title;
+        updatedFieldsList.push('title');
+      }
+
+      // Update description (Atlassian Document Format)
+      if (description) {
+        updateFields.description = {
+          type: 'doc',
+          version: 1,
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: description }]
+          }]
+        };
+        updatedFieldsList.push('description');
+      }
+
+      // Update start date
+      if (startDate) {
+        updateFields.customfield_10015 = startDate;
+        updatedFieldsList.push('startDate');
+      }
+
+      // Update due date
+      if (dueDate) {
+        updateFields.duedate = dueDate;
+        updatedFieldsList.push('dueDate');
+      }
+
+      // Update story points
+      if (storyPoints !== undefined) {
+        updateFields.customfield_10016 = storyPoints;
+        updatedFieldsList.push('storyPoints');
+      }
+
+      // Perform the update
+      await jiraService.updateIssue(taskKey, { fields: updateFields });
+
+      const output = {
+        success: true,
+        taskKey: taskKey,
+        updatedFields: updatedFieldsList,
+        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${taskKey}`
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
+
   // Tool 7: Get Task Details
   mcpServer.registerTool(
     'get_task_details',
@@ -486,7 +564,22 @@ export function registerJiraTools(mcpServer, jiraService) {
         status: z.string(),
         priority: z.string(),
         assignee: z.string(),
-        storyPoints: z.number().nullable()
+        storyPoints: z.number().nullable(),
+        hasSubtasks: z.boolean(),
+        subtasksCount: z.number(),
+        subtasks: z.array(z.object({
+          key: z.string(),
+          summary: z.string(),
+          description: z.string().nullable(),
+          status: z.string(),
+          priority: z.string(),
+          assignee: z.string(),
+          storyPoints: z.number(),
+          startDate: z.string().nullable(),
+          dueDate: z.string().nullable(),
+          created: z.string(),
+          url: z.string()
+        }))
       })
     },
     async ({ taskKey }) => {
@@ -494,6 +587,34 @@ export function registerJiraTools(mcpServer, jiraService) {
         taskKey,
         'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype,subtasks'
       );
+
+      // Fetch detailed information for each subtask if they exist
+      const subtasksDetails = [];
+      if (issue.fields.subtasks && issue.fields.subtasks.length > 0) {
+        for (const subtask of issue.fields.subtasks) {
+          try {
+            const subtaskDetail = await jiraService.getIssue(
+              subtask.key,
+              'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype'
+            );
+            subtasksDetails.push({
+              key: subtaskDetail.key,
+              summary: subtaskDetail.fields.summary,
+              description: subtaskDetail.fields.description?.content?.[0]?.content?.[0]?.text || null,
+              status: subtaskDetail.fields.status.name,
+              priority: subtaskDetail.fields.priority ? subtaskDetail.fields.priority.name : 'None',
+              assignee: subtaskDetail.fields.assignee ? subtaskDetail.fields.assignee.displayName : 'Unassigned',
+              storyPoints: subtaskDetail.fields.customfield_10016 || 0,
+              startDate: subtaskDetail.fields.customfield_10015 || null,
+              dueDate: subtaskDetail.fields.duedate || null,
+              created: subtaskDetail.fields.created,
+              url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${subtaskDetail.key}`
+            });
+          } catch (error) {
+            logger.error(`Failed to fetch subtask ${subtask.key}`, error);
+          }
+        }
+      }
 
       const output = {
         key: issue.key,
@@ -508,7 +629,8 @@ export function registerJiraTools(mcpServer, jiraService) {
         dueDate: issue.fields.duedate || null,
         created: issue.fields.created,
         hasSubtasks: issue.fields.subtasks && issue.fields.subtasks.length > 0,
-        subtasksCount: issue.fields.subtasks ? issue.fields.subtasks.length : 0,
+        subtasksCount: subtasksDetails.length,
+        subtasks: subtasksDetails,
         url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
       };
 
@@ -637,7 +759,7 @@ export function registerJiraTools(mcpServer, jiraService) {
 
       // Calculate working days between two dates
       const getWorkingDaysBetween = (startDate, endDate) => {
-        if (!startDate || !endDate) return 1;
+        if (!startDate || !endDate) return 0;
         let workingDays = 0;
         let current = moment(startDate);
         const endMoment = moment(endDate);
@@ -648,7 +770,7 @@ export function registerJiraTools(mcpServer, jiraService) {
           }
           current.add(1, 'day');
         }
-        return workingDays > 0 ? workingDays : 1;
+        return workingDays;
       };
 
       // Calculate working days in current month for a task
