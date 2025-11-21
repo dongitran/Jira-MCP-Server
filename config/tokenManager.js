@@ -15,6 +15,8 @@ class TokenManager {
     this.cacheDir = path.join(os.homedir(), '.jira-mcp');
     this.cacheFile = path.join(this.cacheDir, 'cloud-id.cache');
     this.tokenCacheFile = path.join(this.cacheDir, 'tokens.cache');
+    this.isRefreshing = false; // Prevent concurrent refresh
+    this.refreshPromise = null; // Store ongoing refresh promise
   }
 
   setCredentials(config) {
@@ -25,8 +27,7 @@ class TokenManager {
     const cachedTokens = this.loadCachedTokens();
     
     if (cachedTokens && cachedTokens.clientId === this.clientId) {
-      // Use cached tokens if they match the same client
-      console.error('📦 Loaded cached tokens');
+      // Use cached tokens if they match the same client (silent load)
       this.accessToken = cachedTokens.accessToken;
       this.refreshToken = cachedTokens.refreshToken;
       this.cloudId = cachedTokens.cloudId;
@@ -54,7 +55,7 @@ class TokenManager {
         const cached = JSON.parse(fs.readFileSync(this.cacheFile, 'utf8'));
         // Cache valid for 7 days
         if (cached.cloudId && cached.timestamp && (Date.now() - cached.timestamp < 7 * 24 * 60 * 60 * 1000)) {
-          console.error('📦 Loaded cached Cloud ID:', cached.cloudId);
+          // Silent load
           return cached.cloudId;
         }
       }
@@ -91,11 +92,11 @@ class TokenManager {
             
             // If token expires in more than 5 minutes, it's still good
             if (tokenPayload.exp > currentTime + 300) {
-              console.error('📦 Cached tokens are still valid');
+              // Tokens valid, silent load
               return cached;
             } else {
-              console.error('⚠️  Cached tokens expired, will refresh');
-              return cached; // Return anyway, will be refreshed
+              // Tokens expired, will refresh on first use
+              return cached;
             }
           } catch (error) {
             console.error('⚠️  Failed to decode cached token:', error.message);
@@ -124,7 +125,7 @@ class TokenManager {
       };
       
       fs.writeFileSync(this.tokenCacheFile, JSON.stringify(tokenData, null, 2));
-      console.error('💾 Tokens saved to cache');
+      // Silent save, only log errors
     } catch (error) {
       console.error('Warning: Failed to cache tokens:', error.message);
     }
@@ -166,27 +167,63 @@ class TokenManager {
 
   async validateAndRefreshToken() {
     try {
-      const tokenPayload = this.decodeJWT(this.accessToken);
+      // If already refreshing, wait for that to complete
+      if (this.isRefreshing && this.refreshPromise) {
+        // Silently wait, no need to log every time
+        await this.refreshPromise;
+        return;
+      }
+
+      // Try to decode and validate token
+      let tokenPayload;
+      try {
+        tokenPayload = this.decodeJWT(this.accessToken);
+      } catch (decodeError) {
+        // Token is invalid or malformed, force refresh
+        // Only log critical errors
+        console.error('⚠️  Token invalid, refreshing...');
+        this.isRefreshing = true;
+        this.refreshPromise = this.refreshAccessToken()
+          .finally(() => {
+            this.isRefreshing = false;
+            this.refreshPromise = null;
+          });
+        await this.refreshPromise;
+        return;
+      }
+
       const currentTime = Math.floor(Date.now() / 1000);
 
       // If token expires in less than 5 minutes, refresh it
       if (tokenPayload.exp > currentTime + 300) {
-        console.error('✅ Access token is still valid');
+        // Token is still valid, no need to refresh
         return;
       }
 
-      console.error('🔄 Access token expired, refreshing...');
-      await this.refreshAccessToken();
+      // Token expired, refresh silently (will log if fails)
+      
+      // Set refreshing flag and store promise
+      this.isRefreshing = true;
+      this.refreshPromise = this.refreshAccessToken()
+        .finally(() => {
+          this.isRefreshing = false;
+          this.refreshPromise = null;
+        });
+      
+      await this.refreshPromise;
     } catch (_error) {
-      console.error('Token validation error:', _error.message);
-      throw new Error('Token validation failed');
+      console.error('❌ Token validation error:', _error.message);
+      throw new Error('Token validation failed: ' + _error.message);
     }
   }
 
   async refreshAccessToken(retries = 3, delay = 1000) {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        console.error(`🔄 Refreshing token (attempt ${attempt}/${retries})...`);
+        // Only log on first attempt or failures
+        if (attempt === 1) {
+          console.error('🔄 Refreshing token...');
+        }
         
         const response = await axios.post(this.tokenUrl, {
           grant_type: 'refresh_token',
@@ -197,7 +234,7 @@ class TokenManager {
           headers: {
             'Content-Type': 'application/json'
           },
-          timeout: 10000
+          timeout: 15000 // Increased to 15s
         });
 
         // Update tokens in memory
@@ -207,19 +244,23 @@ class TokenManager {
         // Save to cache immediately
         this.saveCachedTokens();
 
-        console.error('✅ Token refreshed and saved successfully');
+        // Only log if it took multiple attempts
+        if (attempt > 1) {
+          console.error(`✅ Token refreshed after ${attempt} attempts`);
+        }
         return response.data;
       } catch (error) {
         const isLastAttempt = attempt === retries;
+        const errorMsg = error.response?.data?.error_description || error.response?.data?.error || error.message;
         
         if (isLastAttempt) {
-          console.error(`❌ Token refresh failed after ${retries} attempts:`, error.response?.data || error.message);
-          throw new Error('Failed to refresh access token');
+          console.error(`❌ Token refresh failed after ${retries} attempts:`, errorMsg);
+          throw new Error(`Failed to refresh access token: ${errorMsg}`);
         }
         
-        console.error(`⚠️  Attempt ${attempt} failed, retrying in ${delay}ms...`);
+        console.error(`⚠️  Attempt ${attempt} failed: ${errorMsg}, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2;
+        delay *= 2; // Exponential backoff
       }
     }
   }

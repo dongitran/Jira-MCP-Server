@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0-alpha.1] - 2025-11-21
+
+### Added
+- **Automatic Retry Mechanism**: API calls retry up to 3 times with exponential backoff
+- **Circuit Breaker Pattern**: Prevents cascading failures when service is down
+- **Enhanced Token Management**: Concurrent refresh prevention, smart 401 handling
+- **Configurable Retry Settings**: New `retryConfig.js` for easy tuning
+- **File Logging**: Enabled by default with auto-rotation at 10MB
+
+### Changed
+- **Reduced stderr Logging**: 90% reduction, optimized for MCP stdio transport
+- Token validation only on first attempt (not every retry)
+
+### Fixed
+- API call failures now auto-retry instead of immediate failure
+- Token expiration during retry properly handled
+- Logging noise reduced for better MCP communication
+
+### Note
+This is an **alpha release** for testing. Install with: `npm install @urcard/jira-mcp-server@alpha`
+
 ## [1.0.9] - 2025-11-17
 
 ### Changed

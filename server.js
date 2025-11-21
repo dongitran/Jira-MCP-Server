@@ -48,7 +48,7 @@ if (!jiraService.cloudId) {
 jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`;
 console.error(`☁️  Using Cloud ID: ${jiraService.cloudId}`);
 
-const SERVER_VERSION = '1.0.18';
+const SERVER_VERSION = '1.1.0-alpha.1';
 
 // Main async function
 async function main() {
