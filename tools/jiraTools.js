@@ -1,5 +1,37 @@
 import { z } from 'zod';
 import moment from 'moment';
+import {
+  getWorkingDaysBetween,
+  calculateMonthlyHours,
+  spansMultipleMonths,
+  getCurrentMonthInfo,
+  round2
+} from '../utils/dateHelpers.js';
+
+// Helper: Build issue URL
+const buildIssueUrl = (cloudId, issueKey) => 
+  `https://api.atlassian.com/ex/jira/${cloudId}/browse/${issueKey}`;
+
+// Helper: Build Atlassian Document Format for description
+const buildADF = (text) => ({
+  type: 'doc',
+  version: 1,
+  content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
+});
+
+// Helper: Extract text from ADF description
+const extractADFText = (description) => 
+  description?.content?.[0]?.content?.[0]?.text || null;
+
+// Helper: Map issue to basic task object
+const mapIssueToTask = (issue, cloudId) => ({
+  key: issue.key,
+  summary: issue.fields.summary,
+  status: issue.fields.status.name,
+  priority: issue.fields.priority?.name || 'None',
+  dueDate: issue.fields.duedate || null,
+  url: buildIssueUrl(cloudId, issue.key)
+});
 
 export function registerJiraTools(mcpServer, jiraService) {
   
@@ -11,89 +43,42 @@ export function registerJiraTools(mcpServer, jiraService) {
       description: 'Get tasks assigned to current user with various filters',
       inputSchema: z.object({
         filter: z.enum(['todo', 'today', 'in-progress', 'high-priority', 'overdue', 'completed', 'all'])
-          .default('all')
-          .describe('Filter type for tasks'),
-        period: z.enum(['today', 'week', 'month']).optional()
-          .describe('Period for completed tasks filter')
-      }),
-      outputSchema: z.object({
-        total: z.number(),
-        tasks: z.array(z.object({
-          key: z.string(),
-          summary: z.string(),
-          status: z.string(),
-          priority: z.string(),
-          dueDate: z.string().nullable()
-        }))
+          .default('all').describe('Filter type for tasks'),
+        period: z.enum(['today', 'week', 'month']).optional().describe('Period for completed filter')
       })
     },
     async ({ filter, period }) => {
       const user = await jiraService.getCurrentUser();
+      const today = moment().format('YYYY-MM-DD');
       let jql = '';
 
-      switch (filter) {
-      case 'todo':
-        jql = `assignee = "${user.accountId}" AND status IN ("To Do", "Open", "New", "Backlog")`;
-        break;
-      case 'today': {
-        const today = moment().format('YYYY-MM-DD');
-        jql = `assignee = "${user.accountId}" AND status IN ("In Progress", "In Review") AND (duedate = "${today}" OR updated >= "${today}")`;
-        break;
-      }
-      case 'in-progress':
-        jql = `assignee = "${user.accountId}" AND status IN ("In Progress", "In Development", "In Review")`;
-        break;
-      case 'high-priority':
-        jql = `assignee = "${user.accountId}" AND priority IN ("Highest", "High") AND status NOT IN ("Done", "Closed", "Resolved")`;
-        break;
-      case 'overdue': {
-        const now = moment().format('YYYY-MM-DD');
-        jql = `assignee = "${user.accountId}" AND duedate < "${now}" AND status NOT IN ("Done", "Closed", "Resolved")`;
-        break;
-      }
-      case 'completed': {
-        let startDate;
-        if (period === 'today') {
-          startDate = moment().format('YYYY-MM-DD');
-        } else if (period === 'week') {
-          startDate = moment().startOf('week').format('YYYY-MM-DD');
-        } else if (period === 'month') {
-          startDate = moment().startOf('month').format('YYYY-MM-DD');
-        } else {
-          startDate = moment().subtract(7, 'days').format('YYYY-MM-DD');
-        }
+      const jqlMap = {
+        'todo': `assignee = "${user.accountId}" AND status IN ("To Do", "Open", "New", "Backlog")`,
+        'today': `assignee = "${user.accountId}" AND status IN ("In Progress", "In Review") AND (duedate = "${today}" OR updated >= "${today}")`,
+        'in-progress': `assignee = "${user.accountId}" AND status IN ("In Progress", "In Development", "In Review")`,
+        'high-priority': `assignee = "${user.accountId}" AND priority IN ("Highest", "High") AND status NOT IN ("Done", "Closed", "Resolved")`,
+        'overdue': `assignee = "${user.accountId}" AND duedate < "${today}" AND status NOT IN ("Done", "Closed", "Resolved")`,
+        'all': `assignee = "${user.accountId}"`
+      };
+
+      if (filter === 'completed') {
+        const periodMap = {
+          'today': moment().format('YYYY-MM-DD'),
+          'week': moment().startOf('week').format('YYYY-MM-DD'),
+          'month': moment().startOf('month').format('YYYY-MM-DD')
+        };
+        const startDate = periodMap[period] || moment().subtract(7, 'days').format('YYYY-MM-DD');
         jql = `assignee = "${user.accountId}" AND status IN ("Done", "Closed", "Resolved") AND resolved >= "${startDate}"`;
-        break;
-      }
-      default:
-        jql = `assignee = "${user.accountId}"`;
+      } else {
+        jql = jqlMap[filter];
       }
 
       const result = await jiraService.searchIssues(jql);
-
-      // Ensure result has required fields
       const issues = result.issues || [];
-      const total = typeof result.total === 'number' ? result.total : issues.length;
+      const tasks = issues.map(issue => mapIssueToTask(issue, jiraService.cloudId));
 
-      const tasks = issues.map(issue => ({
-        key: issue.key,
-        summary: issue.fields.summary,
-        status: issue.fields.status.name,
-        priority: issue.fields.priority ? issue.fields.priority.name : 'None',
-        dueDate: issue.fields.duedate || null,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
-      }));
-
-      const output = {
-        total: total,
-        filter: filter,
-        tasks: tasks
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      const output = { total: result.total || issues.length, filter, tasks };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
@@ -102,22 +87,9 @@ export function registerJiraTools(mcpServer, jiraService) {
     'get_tasks_by_date',
     {
       title: 'Get Tasks by Date',
-      description: 'Get tasks active on a specific date (between start date and due date)',
+      description: 'Get tasks active on a specific date with daily hours calculation',
       inputSchema: z.object({
-        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
-          .describe('Date in YYYY-MM-DD format')
-      }),
-      outputSchema: z.object({
-        date: z.string(),
-        total: z.number(),
-        totalDailyHours: z.number(),
-        tasks: z.array(z.object({
-          key: z.string(),
-          summary: z.string(),
-          status: z.string(),
-          storyPoints: z.number(),
-          dailyHours: z.number()
-        }))
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe('Date in YYYY-MM-DD format')
       })
     },
     async ({ date }) => {
@@ -125,95 +97,53 @@ export function registerJiraTools(mcpServer, jiraService) {
       const targetDate = moment(date).format('YYYY-MM-DD');
       
       const jql = `assignee = "${user.accountId}" AND duedate >= "${targetDate}" AND duedate IS NOT EMPTY`;
-      const result = await jiraService.searchIssues(
-        jql, 
-        'summary,key,status,priority,assignee,duedate,created,customfield_10015,customfield_10016,issuetype,subtasks'
-      );
-
-      // Vietnamese holidays
-      const vietnameseHolidays = [
-        '2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31', '2025-02-03',
-        '2025-04-18', '2025-04-30', '2025-05-01', '2025-09-01', '2025-09-02'
-      ];
-
-      const isVietnameseHoliday = (date) => vietnameseHolidays.includes(moment(date).format('YYYY-MM-DD'));
-
-      const calculateWorkingDays = (start, end) => {
-        if (!start || !end) return 1;
-        let workingDays = 0;
-        let current = moment(start);
-        const endMoment = moment(end);
-        
-        while (current.isSameOrBefore(endMoment)) {
-          if (current.day() >= 1 && current.day() <= 5 && !isVietnameseHoliday(current)) {
-            workingDays++;
-          }
-          current.add(1, 'day');
-        }
-        return workingDays > 0 ? workingDays : 1;
-      };
+      const result = await jiraService.searchIssues(jql, 
+        'summary,key,status,priority,duedate,created,customfield_10015,customfield_10016,issuetype,subtasks');
 
       const tasksOnDate = result.issues
         .filter(issue => {
-          const hasSubtasks = issue.fields.subtasks && issue.fields.subtasks.length > 0;
+          const hasSubtasks = issue.fields.subtasks?.length > 0;
           const isSubtask = issue.fields.issuetype.subtask;
-          
           if (hasSubtasks && !isSubtask) return false;
           
-          const createdDate = issue.fields.created;
-          const startDate = issue.fields.customfield_10015;
           const dueDate = issue.fields.duedate;
-          
           if (!dueDate) return false;
           
+          const effectiveStart = issue.fields.customfield_10015 || issue.fields.created;
+          const start = moment(effectiveStart).format('YYYY-MM-DD');
           const due = moment(dueDate).format('YYYY-MM-DD');
-          const effectiveStartDate = startDate || createdDate;
           
-          if (effectiveStartDate) {
-            const start = moment(effectiveStartDate).format('YYYY-MM-DD');
-            return moment(targetDate).isSameOrAfter(start) && moment(targetDate).isSameOrBefore(due);
-          }
-          
-          return moment(targetDate).isSameOrBefore(due);
+          return moment(targetDate).isSameOrAfter(start) && moment(targetDate).isSameOrBefore(due);
         })
         .map(issue => {
-          const createdDate = issue.fields.created;
-          const startDate = issue.fields.customfield_10015;
+          const effectiveStart = issue.fields.customfield_10015 || issue.fields.created;
           const dueDate = issue.fields.duedate;
           const storyPoints = issue.fields.customfield_10016 || 0;
-          
-          const effectiveStartDate = startDate || createdDate;
-          const totalTaskHours = storyPoints * 2;
-          const workingDays = calculateWorkingDays(effectiveStartDate, dueDate);
-          const dailyHours = workingDays > 0 ? totalTaskHours / workingDays : totalTaskHours;
+          const workingDays = getWorkingDaysBetween(effectiveStart, dueDate) || 1;
+          const dailyHours = round2((storyPoints * 2) / workingDays);
           
           return {
             key: issue.key,
             summary: issue.fields.summary,
             status: issue.fields.status.name,
-            priority: issue.fields.priority ? issue.fields.priority.name : 'None',
-            storyPoints: storyPoints,
-            dailyHours: Math.round(dailyHours * 100) / 100,
-            startDate: effectiveStartDate ? moment(effectiveStartDate).format('YYYY-MM-DD') : null,
+            priority: issue.fields.priority?.name || 'None',
+            storyPoints,
+            dailyHours,
+            startDate: moment(effectiveStart).format('YYYY-MM-DD'),
             dueDate: moment(dueDate).format('YYYY-MM-DD'),
-            url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+            url: buildIssueUrl(jiraService.cloudId, issue.key)
           };
         });
 
-      const totalDailyHours = tasksOnDate.reduce((sum, task) => sum + task.dailyHours, 0);
-
+      const totalDailyHours = round2(tasksOnDate.reduce((sum, t) => sum + t.dailyHours, 0));
       const output = {
         date: targetDate,
         total: tasksOnDate.length,
-        totalDailyHours: Math.round(totalDailyHours * 100) / 100,
-        totalDailyWorkingHours: Math.round((totalDailyHours / 8) * 100) / 100,
+        totalDailyHours,
+        totalDailyWorkingHours: round2(totalDailyHours / 8),
         tasks: tasksOnDate
       };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
@@ -225,50 +155,22 @@ export function registerJiraTools(mcpServer, jiraService) {
       description: 'Search tasks using JQL query or keyword',
       inputSchema: z.object({
         query: z.string().describe('JQL query or keyword to search'),
-        maxResults: z.number().default(50).describe('Maximum number of results')
-      }),
-      outputSchema: z.object({
-        total: z.number(),
-        tasks: z.array(z.object({
-          key: z.string(),
-          summary: z.string(),
-          status: z.string()
-        }))
+        maxResults: z.number().default(50).describe('Maximum results')
       })
     },
     async ({ query, maxResults }) => {
       const user = await jiraService.getCurrentUser();
-      
-      // Check if it's a JQL query or simple keyword
-      let jql;
-      if (query.toLowerCase().includes('assignee') || query.toLowerCase().includes('status') || query.toLowerCase().includes('project')) {
-        jql = query;
-      } else {
-        jql = `assignee = "${user.accountId}" AND text ~ "${query}"`;
-      }
+      const isJQL = /assignee|status|project/i.test(query);
+      const jql = isJQL ? query : `assignee = "${user.accountId}" AND text ~ "${query}"`;
 
       const result = await jiraService.searchIssues(jql, null, maxResults);
-      
       const tasks = result.issues.map(issue => ({
-        key: issue.key,
-        summary: issue.fields.summary,
-        status: issue.fields.status.name,
-        priority: issue.fields.priority ? issue.fields.priority.name : 'None',
-        assignee: issue.fields.assignee ? issue.fields.assignee.displayName : 'Unassigned',
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+        ...mapIssueToTask(issue, jiraService.cloudId),
+        assignee: issue.fields.assignee?.displayName || 'Unassigned'
       }));
 
-      const output = {
-        query: query,
-        total: result.total,
-        returned: tasks.length,
-        tasks: tasks
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      const output = { query, total: result.total, returned: tasks.length, tasks };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
@@ -277,157 +179,94 @@ export function registerJiraTools(mcpServer, jiraService) {
     'create_task',
     {
       title: 'Create Task',
-      description: `Create a new Jira task with optional subtasks and sprint assignment. Uses default project/board from config if not specified.${jiraService.defaultProject ? ` Default project: ${jiraService.defaultProject}.` : ''}${jiraService.defaultBoardId ? ` Default board: ${jiraService.defaultBoardId} (auto-sprint).` : ''}`,
+      description: `Create a new Jira task with optional subtasks and sprint assignment.${jiraService.defaultProject ? ` Default project: ${jiraService.defaultProject}.` : ''}${jiraService.defaultBoardId ? ` Default board: ${jiraService.defaultBoardId}.` : ''}`,
       inputSchema: z.object({
-        project: z.string().optional().describe(`Project key (e.g., "URC")${jiraService.defaultProject ? `. Default: ${jiraService.defaultProject}` : ''}`),
-        summary: z.string().describe('Task title/summary'),
-        description: z.string().optional().describe('Task description'),
-        issueType: z.string().default('Task').describe('Issue type'),
-        priority: z.string().default('Medium').describe('Priority level'),
-        storyPoints: z.number().optional().describe('Story points'),
-        startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
-        dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)'),
-        // Sprint options
-        sprintId: z.number().optional().describe('Sprint ID to add task to (direct assignment)'),
-        boardId: z.number().optional().describe(`Board ID to auto-assign to active sprint${jiraService.defaultBoardId ? `. Default: ${jiraService.defaultBoardId}` : ''}`),
+        project: z.string().optional().describe('Project key'),
+        summary: z.string().describe('Task title'),
+        description: z.string().optional(),
+        issueType: z.string().default('Task'),
+        priority: z.string().default('Medium'),
+        storyPoints: z.number().optional(),
+        startDate: z.string().optional(),
+        dueDate: z.string().optional(),
+        sprintId: z.number().optional().describe('Sprint ID for direct assignment'),
+        boardId: z.number().optional().describe('Board ID for active sprint'),
         subtasks: z.array(z.object({
           summary: z.string(),
           description: z.string().optional(),
           storyPoints: z.number().optional(),
-          startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
-          dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)')
-        })).optional().describe('Array of subtasks')
-      }),
-      outputSchema: z.object({
-        success: z.boolean(),
-        task: z.object({
-          key: z.string(),
-          summary: z.string(),
-          url: z.string(),
-          sprint: z.object({
-            id: z.number(),
-            name: z.string()
-          }).nullable()
-        })
+          startDate: z.string().optional(),
+          dueDate: z.string().optional()
+        })).optional()
       })
     },
     async ({ project, summary, description, issueType, priority, storyPoints, startDate, dueDate, sprintId, boardId, subtasks }) => {
       const user = await jiraService.getCurrentUser();
-      
-      // Use defaults from config if not provided
       const effectiveProject = project || jiraService.defaultProject;
       const effectiveBoardId = boardId || jiraService.defaultBoardId;
 
       if (!effectiveProject) {
-        throw new Error('Project is required. Either provide "project" parameter or set --default_project in MCP config.');
+        throw new Error('Project is required. Provide "project" or set --default_project.');
       }
 
       const parentFields = {
         project: { key: effectiveProject },
-        summary: summary,
+        summary,
         issuetype: { name: issueType },
         priority: { name: priority },
         assignee: { accountId: user.accountId }
       };
-
-      if (description) {
-        parentFields.description = {
-          type: 'doc',
-          version: 1,
-          content: [{
-            type: 'paragraph',
-            content: [{ type: 'text', text: description }]
-          }]
-        };
-      }
-
+      if (description) parentFields.description = buildADF(description);
       if (storyPoints) parentFields.customfield_10016 = storyPoints;
       if (startDate) parentFields.customfield_10015 = startDate;
       if (dueDate) parentFields.duedate = dueDate;
 
-      // Create the parent task first
       const parentTask = await jiraService.createIssue({ fields: parentFields });
       
-      // Handle Sprint assignment
+      // Sprint assignment
       let sprintInfo = null;
       let targetSprintId = sprintId;
 
-      // If boardId provided (or default), get active sprint
       if (!targetSprintId && effectiveBoardId) {
-        try {
-          const activeSprint = await jiraService.getActiveSprint(effectiveBoardId);
-          if (activeSprint) {
-            targetSprintId = activeSprint.id;
-            sprintInfo = {
-              id: activeSprint.id,
-              name: activeSprint.name,
-              state: activeSprint.state
-            };
-          }
-        } catch (error) {
-          console.error('Failed to get active sprint:', error.message);
+        const activeSprint = await jiraService.getActiveSprint(effectiveBoardId);
+        if (activeSprint) {
+          targetSprintId = activeSprint.id;
+          sprintInfo = { id: activeSprint.id, name: activeSprint.name, state: activeSprint.state };
         }
       }
 
-      // Move task to sprint if we have a sprint ID
       if (targetSprintId) {
         try {
           await jiraService.moveIssuesToSprint(targetSprintId, [parentTask.key]);
-          
-          // If we don't have sprint info yet (direct sprintId provided), fetch it
           if (!sprintInfo) {
-            try {
-              const sprint = await jiraService.getSprint(targetSprintId);
-              sprintInfo = {
-                id: sprint.id,
-                name: sprint.name,
-                state: sprint.state
-              };
-            } catch (_e) {
-              sprintInfo = { id: targetSprintId, name: 'Unknown', state: 'unknown' };
-            }
+            const sprint = await jiraService.getSprint(targetSprintId).catch(() => null);
+            sprintInfo = sprint 
+              ? { id: sprint.id, name: sprint.name, state: sprint.state } 
+              : { id: targetSprintId, name: 'Unknown', state: 'unknown' };
           }
-        } catch (error) {
-          console.error('Failed to move task to sprint:', error.message);
-        }
+        } catch (e) { console.error('Sprint assignment failed:', e.message); }
       }
 
       // Create subtasks
       const createdSubtasks = [];
-      if (subtasks && subtasks.length > 0) {
-        for (const subtask of subtasks) {
-          const subtaskFields = {
+      if (subtasks?.length) {
+        for (const st of subtasks) {
+          const stFields = {
             project: { key: effectiveProject },
-            summary: subtask.summary,
+            summary: st.summary,
             issuetype: { name: 'Subtask' },
             parent: { key: parentTask.key },
             assignee: { accountId: user.accountId }
           };
-          
-          if (subtask.description) {
-            subtaskFields.description = {
-              type: 'doc',
-              version: 1,
-              content: [{
-                type: 'paragraph',
-                content: [{ type: 'text', text: subtask.description }]
-              }]
-            };
-          }
-
-          if (subtask.storyPoints) subtaskFields.customfield_10016 = subtask.storyPoints;
-          if (subtask.startDate) subtaskFields.customfield_10015 = subtask.startDate;
-          if (subtask.dueDate) subtaskFields.duedate = subtask.dueDate;
+          if (st.description) stFields.description = buildADF(st.description);
+          if (st.storyPoints) stFields.customfield_10016 = st.storyPoints;
+          if (st.startDate) stFields.customfield_10015 = st.startDate;
+          if (st.dueDate) stFields.duedate = st.dueDate;
           
           try {
-            const createdSubtask = await jiraService.createIssue({ fields: subtaskFields });
-            createdSubtasks.push({
-              key: createdSubtask.key,
-              summary: subtask.summary
-            });
-          } catch (error) {
-            console.error('Failed to create subtask:', error.message);
-          }
+            const created = await jiraService.createIssue({ fields: stFields });
+            createdSubtasks.push({ key: created.key, summary: st.summary });
+          } catch (e) { console.error('Subtask creation failed:', e.message); }
         }
       }
 
@@ -435,17 +274,13 @@ export function registerJiraTools(mcpServer, jiraService) {
         success: true,
         task: {
           key: parentTask.key,
-          summary: summary,
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${parentTask.key}`,
+          summary,
+          url: buildIssueUrl(jiraService.cloudId, parentTask.key),
           sprint: sprintInfo,
           subtasks: createdSubtasks
         }
       };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
@@ -457,42 +292,21 @@ export function registerJiraTools(mcpServer, jiraService) {
       description: 'Update start date and/or due date of a task',
       inputSchema: z.object({
         taskKey: z.string().describe('Task key (e.g., "URC-123")'),
-        startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
-        dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)')
-      }),
-      outputSchema: z.object({
-        success: z.boolean(),
-        taskKey: z.string(),
-        updatedFields: z.array(z.string())
+        startDate: z.string().optional(),
+        dueDate: z.string().optional()
       })
     },
     async ({ taskKey, startDate, dueDate }) => {
       const updateFields = {};
       const updatedFieldsList = [];
       
-      if (dueDate) {
-        updateFields.duedate = dueDate;
-        updatedFieldsList.push('dueDate');
-      }
-      
-      if (startDate) {
-        updateFields.customfield_10015 = startDate;
-        updatedFieldsList.push('startDate');
-      }
+      if (dueDate) { updateFields.duedate = dueDate; updatedFieldsList.push('dueDate'); }
+      if (startDate) { updateFields.customfield_10015 = startDate; updatedFieldsList.push('startDate'); }
 
       await jiraService.updateIssue(taskKey, { fields: updateFields });
 
-      const output = {
-        success: true,
-        taskKey: taskKey,
-        updatedFields: updatedFieldsList,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${taskKey}`
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      const output = { success: true, taskKey, updatedFields: updatedFieldsList, url: buildIssueUrl(jiraService.cloudId, taskKey) };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
@@ -503,477 +317,222 @@ export function registerJiraTools(mcpServer, jiraService) {
       title: 'Update Story Points',
       description: 'Update story points of a task',
       inputSchema: z.object({
-        taskKey: z.string().describe('Task key (e.g., "URC-123")'),
+        taskKey: z.string().describe('Task key'),
         storyPoints: z.number().describe('Story points value')
-      }),
-      outputSchema: z.object({
-        success: z.boolean(),
-        taskKey: z.string(),
-        storyPoints: z.number()
       })
     },
     async ({ taskKey, storyPoints }) => {
-      await jiraService.updateIssue(taskKey, {
-        fields: { customfield_10016: storyPoints }
-      });
-
-      const output = {
-        success: true,
-        taskKey: taskKey,
-        storyPoints: storyPoints,
-        estimatedHours: storyPoints * 2,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${taskKey}`
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      await jiraService.updateIssue(taskKey, { fields: { customfield_10016: storyPoints } });
+      const output = { success: true, taskKey, storyPoints, estimatedHours: storyPoints * 2, url: buildIssueUrl(jiraService.cloudId, taskKey) };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
-  // Tool 6b: Update Task (Comprehensive)
+  // Tool 7: Update Task (Comprehensive)
   mcpServer.registerTool(
     'update_task',
     {
       title: 'Update Task',
-      description: 'Update task fields including title, description, dates, and story points. Only provided fields will be updated.',
+      description: 'Update task fields: title, description, dates, story points',
       inputSchema: z.object({
-        taskKey: z.string().describe('Task key (e.g., "URC-123")'),
-        title: z.string().optional().describe('Task title/summary'),
-        description: z.string().optional().describe('Task description'),
-        startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
-        dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)'),
-        storyPoints: z.number().optional().describe('Story points value')
-      }),
-      outputSchema: z.object({
-        success: z.boolean(),
-        taskKey: z.string(),
-        updatedFields: z.array(z.string())
+        taskKey: z.string().describe('Task key'),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        startDate: z.string().optional(),
+        dueDate: z.string().optional(),
+        storyPoints: z.number().optional()
       })
     },
     async ({ taskKey, title, description, startDate, dueDate, storyPoints }) => {
       const updateFields = {};
       const updatedFieldsList = [];
 
-      // Update title (summary)
-      if (title) {
-        updateFields.summary = title;
-        updatedFieldsList.push('title');
-      }
+      if (title) { updateFields.summary = title; updatedFieldsList.push('title'); }
+      if (description) { updateFields.description = buildADF(description); updatedFieldsList.push('description'); }
+      if (startDate) { updateFields.customfield_10015 = startDate; updatedFieldsList.push('startDate'); }
+      if (dueDate) { updateFields.duedate = dueDate; updatedFieldsList.push('dueDate'); }
+      if (storyPoints !== undefined) { updateFields.customfield_10016 = storyPoints; updatedFieldsList.push('storyPoints'); }
 
-      // Update description (Atlassian Document Format)
-      if (description) {
-        updateFields.description = {
-          type: 'doc',
-          version: 1,
-          content: [{
-            type: 'paragraph',
-            content: [{ type: 'text', text: description }]
-          }]
-        };
-        updatedFieldsList.push('description');
-      }
-
-      // Update start date
-      if (startDate) {
-        updateFields.customfield_10015 = startDate;
-        updatedFieldsList.push('startDate');
-      }
-
-      // Update due date
-      if (dueDate) {
-        updateFields.duedate = dueDate;
-        updatedFieldsList.push('dueDate');
-      }
-
-      // Update story points
-      if (storyPoints !== undefined) {
-        updateFields.customfield_10016 = storyPoints;
-        updatedFieldsList.push('storyPoints');
-      }
-
-      // Perform the update
       await jiraService.updateIssue(taskKey, { fields: updateFields });
-
-      const output = {
-        success: true,
-        taskKey: taskKey,
-        updatedFields: updatedFieldsList,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${taskKey}`
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      const output = { success: true, taskKey, updatedFields: updatedFieldsList, url: buildIssueUrl(jiraService.cloudId, taskKey) };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
-  // Tool 7: Get Task Details
+  // Tool 8: Get Task Details
   mcpServer.registerTool(
     'get_task_details',
     {
       title: 'Get Task Details',
       description: 'Get detailed information about a specific task',
-      inputSchema: z.object({
-        taskKey: z.string().describe('Task key (e.g., "URC-123")')
-      }),
-      outputSchema: z.object({
-        key: z.string(),
-        summary: z.string(),
-        description: z.string().nullable(),
-        status: z.string(),
-        priority: z.string(),
-        assignee: z.string(),
-        storyPoints: z.number().nullable(),
-        hasSubtasks: z.boolean(),
-        subtasksCount: z.number(),
-        subtasks: z.array(z.object({
-          key: z.string(),
-          summary: z.string(),
-          description: z.string().nullable(),
-          status: z.string(),
-          priority: z.string(),
-          assignee: z.string(),
-          storyPoints: z.number(),
-          startDate: z.string().nullable(),
-          dueDate: z.string().nullable(),
-          created: z.string(),
-          url: z.string()
-        }))
-      })
+      inputSchema: z.object({ taskKey: z.string().describe('Task key') })
     },
     async ({ taskKey }) => {
-      const issue = await jiraService.getIssue(
-        taskKey,
-        'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype,subtasks'
-      );
+      const fields = 'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype,subtasks';
+      const issue = await jiraService.getIssue(taskKey, fields);
 
-      // Fetch detailed information for each subtask if they exist
       const subtasksDetails = [];
-      if (issue.fields.subtasks && issue.fields.subtasks.length > 0) {
-        for (const subtask of issue.fields.subtasks) {
+      if (issue.fields.subtasks?.length) {
+        for (const st of issue.fields.subtasks) {
           try {
-            const subtaskDetail = await jiraService.getIssue(
-              subtask.key,
-              'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype'
-            );
+            const detail = await jiraService.getIssue(st.key, fields);
             subtasksDetails.push({
-              key: subtaskDetail.key,
-              summary: subtaskDetail.fields.summary,
-              description: subtaskDetail.fields.description?.content?.[0]?.content?.[0]?.text || null,
-              status: subtaskDetail.fields.status.name,
-              priority: subtaskDetail.fields.priority ? subtaskDetail.fields.priority.name : 'None',
-              assignee: subtaskDetail.fields.assignee ? subtaskDetail.fields.assignee.displayName : 'Unassigned',
-              storyPoints: subtaskDetail.fields.customfield_10016 || 0,
-              startDate: subtaskDetail.fields.customfield_10015 || null,
-              dueDate: subtaskDetail.fields.duedate || null,
-              created: subtaskDetail.fields.created,
-              url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${subtaskDetail.key}`
+              key: detail.key,
+              summary: detail.fields.summary,
+              description: extractADFText(detail.fields.description),
+              status: detail.fields.status.name,
+              priority: detail.fields.priority?.name || 'None',
+              assignee: detail.fields.assignee?.displayName || 'Unassigned',
+              storyPoints: detail.fields.customfield_10016 || 0,
+              startDate: detail.fields.customfield_10015 || null,
+              dueDate: detail.fields.duedate || null,
+              created: detail.fields.created,
+              url: buildIssueUrl(jiraService.cloudId, detail.key)
             });
-          } catch (error) {
-            console.error(`Failed to fetch subtask ${subtask.key}:`, error.message);
-          }
+          } catch (e) { console.error(`Failed to fetch subtask ${st.key}:`, e.message); }
         }
       }
 
       const output = {
         key: issue.key,
         summary: issue.fields.summary,
-        description: issue.fields.description?.content?.[0]?.content?.[0]?.text || null,
+        description: extractADFText(issue.fields.description),
         status: issue.fields.status.name,
-        priority: issue.fields.priority ? issue.fields.priority.name : 'None',
-        assignee: issue.fields.assignee ? issue.fields.assignee.displayName : 'Unassigned',
+        priority: issue.fields.priority?.name || 'None',
+        assignee: issue.fields.assignee?.displayName || 'Unassigned',
         issueType: issue.fields.issuetype.name,
         storyPoints: issue.fields.customfield_10016 || 0,
         startDate: issue.fields.customfield_10015 || null,
         dueDate: issue.fields.duedate || null,
         created: issue.fields.created,
-        hasSubtasks: issue.fields.subtasks && issue.fields.subtasks.length > 0,
+        hasSubtasks: subtasksDetails.length > 0,
         subtasksCount: subtasksDetails.length,
         subtasks: subtasksDetails,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+        url: buildIssueUrl(jiraService.cloudId, issue.key)
       };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
-  // Tool 8: Create Subtask
+  // Tool 9: Create Subtask
   mcpServer.registerTool(
     'create_subtask',
     {
       title: 'Create Subtask',
-      description: 'Create a new subtask for an existing parent task with full field support',
+      description: 'Create a new subtask for an existing parent task',
       inputSchema: z.object({
-        parentTaskKey: z.string().describe('Parent task key (e.g., "URC-3524")'),
-        summary: z.string().describe('Subtask title/summary'),
-        description: z.string().optional().describe('Subtask description'),
-        storyPoints: z.number().optional().describe('Story points'),
-        startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
-        dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)')
-      }),
-      outputSchema: z.object({
-        success: z.boolean(),
-        subtask: z.object({
-          key: z.string(),
-          summary: z.string(),
-          parentKey: z.string(),
-          url: z.string()
-        })
+        parentTaskKey: z.string().describe('Parent task key'),
+        summary: z.string().describe('Subtask title'),
+        description: z.string().optional(),
+        storyPoints: z.number().optional(),
+        startDate: z.string().optional(),
+        dueDate: z.string().optional()
       })
     },
     async ({ parentTaskKey, summary, description, storyPoints, startDate, dueDate }) => {
-      // Get current user to assign subtask
       const user = await jiraService.getCurrentUser();
-
-      // Get parent task to get project information
       const parentTask = await jiraService.getIssue(parentTaskKey, 'project');
       const projectKey = parentTask.fields.project.key;
 
-      // Build subtask fields
       const subtaskFields = {
         project: { key: projectKey },
-        summary: summary,
+        summary,
         issuetype: { name: 'Subtask' },
         parent: { key: parentTaskKey },
         assignee: { accountId: user.accountId }
       };
-
-      // Add optional description
-      if (description) {
-        subtaskFields.description = {
-          type: 'doc',
-          version: 1,
-          content: [{
-            type: 'paragraph',
-            content: [{ type: 'text', text: description }]
-          }]
-        };
-      }
-
-      // Add optional fields
+      if (description) subtaskFields.description = buildADF(description);
       if (storyPoints) subtaskFields.customfield_10016 = storyPoints;
       if (startDate) subtaskFields.customfield_10015 = startDate;
       if (dueDate) subtaskFields.duedate = dueDate;
 
-      // Create subtask
-      const createdSubtask = await jiraService.createIssue({ fields: subtaskFields });
-
+      const created = await jiraService.createIssue({ fields: subtaskFields });
       const output = {
         success: true,
         subtask: {
-          key: createdSubtask.key,
-          summary: summary,
-          parentKey: parentTaskKey,
+          key: created.key, summary, parentKey: parentTaskKey,
           assignedTo: user.displayName,
           storyPoints: storyPoints || null,
           startDate: startDate || null,
           dueDate: dueDate || null,
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${createdSubtask.key}`
+          url: buildIssueUrl(jiraService.cloudId, created.key)
         }
       };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
-  // Tool 9: Get Monthly Hours
+
+  // Tool 10: Get Monthly Hours
   mcpServer.registerTool(
     'get_monthly_hours',
     {
       title: 'Get Monthly Hours',
-      description: 'Calculate total monthly hours based on Story Points and working days for current month',
+      description: 'Calculate total monthly hours based on Story Points and working days',
       inputSchema: z.object({
-        includeCompleted: z.boolean().default(true).describe('Include completed tasks (default: true)')
-      }),
-      outputSchema: z.object({
-        period: z.string(),
-        totalMonthlyHours: z.number(),
-        totalMonthlyDays: z.number(),
-        entries: z.number(),
-        breakdown: z.array(z.object({
-          key: z.string(),
-          summary: z.string(),
-          monthlyHours: z.number()
-        }))
+        includeCompleted: z.boolean().default(true).describe('Include completed tasks')
       })
     },
     async ({ includeCompleted }) => {
       const user = await jiraService.getCurrentUser();
+      const currentMonth = getCurrentMonthInfo();
 
-      // Vietnamese holidays for 2025
-      const vietnameseHolidays = [
-        '2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31', '2025-02-03',
-        '2025-04-18', '2025-04-30', '2025-05-01', '2025-09-01', '2025-09-02'
-      ];
-
-      const isVietnameseHoliday = (date) => {
-        return vietnameseHolidays.includes(moment(date).format('YYYY-MM-DD'));
-      };
-
-      // Calculate working days between two dates
-      const getWorkingDaysBetween = (startDate, endDate) => {
-        if (!startDate || !endDate) return 0;
-        let workingDays = 0;
-        let current = moment(startDate);
-        const endMoment = moment(endDate);
-
-        while (current.isSameOrBefore(endMoment)) {
-          if (current.day() >= 1 && current.day() <= 5 && !isVietnameseHoliday(current)) {
-            workingDays++;
-          }
-          current.add(1, 'day');
-        }
-        return workingDays;
-      };
-
-      // Calculate working days in current month for a task
-      const getWorkingDaysInCurrentMonth = (taskStartDate, taskEndDate) => {
-        const monthStart = moment().startOf('month');
-        const monthEnd = moment().endOf('month');
-
-        const effectiveStart = taskStartDate ? moment.max(moment(taskStartDate), monthStart) : monthStart;
-        const effectiveEnd = taskEndDate ? moment.min(moment(taskEndDate), monthEnd) : monthEnd;
-
-        return getWorkingDaysBetween(effectiveStart, effectiveEnd);
-      };
-
-      // Calculate monthly hours for a task
-      const calculateMonthlyHours = (storyPoints, taskStartDate, taskEndDate) => {
-        if (!storyPoints || storyPoints <= 0) {
-          return {
-            monthlyHours: 0,
-            totalHours: 0,
-            totalWorkingDays: 0,
-            currentMonthWorkingDays: 0,
-            calculation: 'No story points assigned'
-          };
-        }
-
-        const endDate = taskEndDate || moment().format('YYYY-MM-DD');
-        const totalHours = storyPoints * 2;
-        const totalWorkingDays = getWorkingDaysBetween(taskStartDate, endDate);
-        const currentMonthWorkingDays = getWorkingDaysInCurrentMonth(taskStartDate, endDate);
-        const monthlyHours = totalWorkingDays > 0
-          ? (totalHours / totalWorkingDays) * currentMonthWorkingDays
-          : 0;
-
-        return {
-          monthlyHours: Math.round(monthlyHours * 100) / 100,
-          totalHours,
-          totalWorkingDays,
-          currentMonthWorkingDays,
-          calculation: `(${storyPoints} SP × 2) / ${totalWorkingDays} working days × ${currentMonthWorkingDays} days in current month = ${Math.round(monthlyHours * 100) / 100} hours`
-        };
-      };
-
-      // Check if task spans multiple months
-      const spansMultipleMonths = (startDate, endDate) => {
-        if (!endDate) endDate = moment().format('YYYY-MM-DD');
-        const start = moment(startDate).startOf('month');
-        const end = moment(endDate).startOf('month');
-        return !start.isSame(end, 'month');
-      };
-
-      // Get current month period
-      const currentMonth = {
-        startDate: moment().startOf('month').format('YYYY-MM-DD'),
-        endDate: moment().endOf('month').format('YYYY-MM-DD'),
-        monthName: moment().format('MMMM YYYY')
-      };
-
-      // Build JQL query
       let jql = `assignee = "${user.accountId}" AND created <= "${currentMonth.endDate}"`;
-
       if (!includeCompleted) {
         jql += ' AND status NOT IN ("Done", "Closed", "Resolved")';
       } else {
         jql += ` AND (status NOT IN ("Done", "Closed", "Resolved") OR resolved >= "${currentMonth.startDate}")`;
       }
 
-      // Search for tasks
-      const result = await jiraService.searchIssues(
-        jql,
-        'summary,key,status,issuetype,subtasks,duedate,created,customfield_10015,customfield_10016,resolved'
-      );
+      const result = await jiraService.searchIssues(jql,
+        'summary,key,status,issuetype,subtasks,duedate,created,customfield_10015,customfield_10016,resolved');
 
       let totalMonthlyHours = 0;
       const breakdown = [];
       const crossMonthTasks = [];
 
-      // Process each task
       result.issues.forEach(issue => {
-        const hasSubtasks = issue.fields.subtasks && issue.fields.subtasks.length > 0;
+        const hasSubtasks = issue.fields.subtasks?.length > 0;
         const isSubtask = issue.fields.issuetype.subtask;
-
-        // Exclude parent tasks with subtasks to avoid double counting
-        if (hasSubtasks && !isSubtask) {
-          return;
-        }
-
-        // Only process tasks with story points
-        if (!issue.fields.customfield_10016) {
-          return;
-        }
-
+        if (hasSubtasks && !isSubtask) return; // Skip parents with subtasks
+        
         const storyPoints = issue.fields.customfield_10016;
+        if (!storyPoints) return;
+
         const startDate = issue.fields.customfield_10015 || issue.fields.created;
         const endDate = issue.fields.duedate || moment().format('YYYY-MM-DD');
+        const calc = calculateMonthlyHours(storyPoints, startDate, endDate);
+        
+        if (calc.monthlyHours <= 0) return;
 
-        // Calculate monthly hours
-        const calculation = calculateMonthlyHours(storyPoints, startDate, endDate);
-
-        // Only include if it contributes hours to current month
-        if (calculation.monthlyHours <= 0) {
-          return;
-        }
-
-        totalMonthlyHours += calculation.monthlyHours;
-
+        totalMonthlyHours += calc.monthlyHours;
         const taskData = {
           key: issue.key,
           summary: issue.fields.summary,
-          storyPoints: storyPoints,
+          storyPoints,
           status: issue.fields.status.name,
           type: issue.fields.issuetype.name,
-          isSubtask: isSubtask,
-          hasSubtasks: hasSubtasks,
+          isSubtask,
           startDate: moment(startDate).format('YYYY-MM-DD'),
           endDate: moment(endDate).format('YYYY-MM-DD'),
-          dueDate: issue.fields.duedate ? moment(issue.fields.duedate).format('YYYY-MM-DD') : null,
-          resolvedDate: issue.fields.resolved ? moment(issue.fields.resolved).format('YYYY-MM-DD') : null,
-          monthlyHours: calculation.monthlyHours,
-          totalHours: calculation.totalHours,
-          totalWorkingDays: calculation.totalWorkingDays,
-          currentMonthWorkingDays: calculation.currentMonthWorkingDays,
-          calculation: calculation.calculation,
+          monthlyHours: calc.monthlyHours,
+          totalHours: calc.totalHours,
+          totalWorkingDays: calc.totalWorkingDays,
+          currentMonthWorkingDays: calc.currentMonthWorkingDays,
+          calculation: calc.calculation,
           spansMultipleMonths: spansMultipleMonths(startDate, endDate),
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+          url: buildIssueUrl(jiraService.cloudId, issue.key)
         };
-
         breakdown.push(taskData);
-
-        if (taskData.spansMultipleMonths) {
-          crossMonthTasks.push(taskData);
-        }
+        if (taskData.spansMultipleMonths) crossMonthTasks.push(taskData);
       });
 
-      // Sort by monthly hours descending
       breakdown.sort((a, b) => b.monthlyHours - a.monthlyHours);
 
       const output = {
         period: currentMonth.monthName,
-        type: 'monthly-hours',
-        totalMonthlyHours: Math.round(totalMonthlyHours * 100) / 100,
-        totalMonthlyDays: Math.round((totalMonthlyHours / 8) * 100) / 100,
+        totalMonthlyHours: round2(totalMonthlyHours),
+        totalMonthlyDays: round2(totalMonthlyHours / 8),
         entries: breakdown.length,
         crossMonthTasksCount: crossMonthTasks.length,
         breakdown,
@@ -983,16 +542,10 @@ export function registerJiraTools(mcpServer, jiraService) {
           totalTasksAnalyzed: result.total,
           tasksWithStoryPoints: breakdown.length,
           tasksSpanningMultipleMonths: crossMonthTasks.length,
-          averageMonthlyHoursPerTask: breakdown.length > 0
-            ? Math.round((totalMonthlyHours / breakdown.length) * 100) / 100
-            : 0
+          averageMonthlyHoursPerTask: breakdown.length > 0 ? round2(totalMonthlyHours / breakdown.length) : 0
         }
       };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
@@ -1001,48 +554,24 @@ export function registerJiraTools(mcpServer, jiraService) {
     'get_board_sprints',
     {
       title: 'Get Board Sprints',
-      description: 'Get all sprints for a board. Useful to find board ID and sprint IDs for task creation.',
+      description: 'Get all sprints for a board',
       inputSchema: z.object({
-        boardId: z.number().describe('Board ID (e.g., 9 for URC board from URL: /boards/9)'),
+        boardId: z.number().describe('Board ID'),
         state: z.enum(['active', 'future', 'closed', 'all']).default('active')
-          .describe('Sprint state filter: active, future, closed, or all')
-      }),
-      outputSchema: z.object({
-        boardId: z.number(),
-        total: z.number(),
-        sprints: z.array(z.object({
-          id: z.number(),
-          name: z.string(),
-          state: z.string(),
-          startDate: z.string().nullable(),
-          endDate: z.string().nullable()
-        }))
       })
     },
     async ({ boardId, state }) => {
       const stateParam = state === 'all' ? 'active,future,closed' : state;
       const result = await jiraService.getBoardSprints(boardId, stateParam);
 
-      const sprints = (result.values || []).map(sprint => ({
-        id: sprint.id,
-        name: sprint.name,
-        state: sprint.state,
-        goal: sprint.goal || null,
-        startDate: sprint.startDate ? moment(sprint.startDate).format('YYYY-MM-DD') : null,
-        endDate: sprint.endDate ? moment(sprint.endDate).format('YYYY-MM-DD') : null
+      const sprints = (result.values || []).map(s => ({
+        id: s.id, name: s.name, state: s.state, goal: s.goal || null,
+        startDate: s.startDate ? moment(s.startDate).format('YYYY-MM-DD') : null,
+        endDate: s.endDate ? moment(s.endDate).format('YYYY-MM-DD') : null
       }));
 
-      const output = {
-        boardId: boardId,
-        total: sprints.length,
-        activeSprint: sprints.find(s => s.state === 'active') || null,
-        sprints: sprints
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      const output = { boardId, total: sprints.length, activeSprint: sprints.find(s => s.state === 'active') || null, sprints };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
@@ -1053,377 +582,199 @@ export function registerJiraTools(mcpServer, jiraService) {
       title: 'Move Task to Sprint',
       description: 'Move one or more tasks to a specific sprint',
       inputSchema: z.object({
-        sprintId: z.number().describe('Sprint ID to move tasks to'),
-        taskKeys: z.array(z.string()).describe('Array of task keys to move (e.g., ["URC-123", "URC-124"])')
-      }),
-      outputSchema: z.object({
-        success: z.boolean(),
-        sprintId: z.number(),
-        movedTasks: z.array(z.string())
+        sprintId: z.number().describe('Sprint ID'),
+        taskKeys: z.array(z.string()).describe('Array of task keys')
       })
     },
     async ({ sprintId, taskKeys }) => {
       await jiraService.moveIssuesToSprint(sprintId, taskKeys);
+      const sprint = await jiraService.getSprint(sprintId).catch(() => null);
+      const sprintInfo = sprint 
+        ? { id: sprint.id, name: sprint.name, state: sprint.state }
+        : { id: sprintId, name: 'Unknown', state: 'unknown' };
 
-      // Get sprint info
-      let sprintInfo = null;
-      try {
-        const sprint = await jiraService.getSprint(sprintId);
-        sprintInfo = {
-          id: sprint.id,
-          name: sprint.name,
-          state: sprint.state
-        };
-      } catch (_e) {
-        sprintInfo = { id: sprintId, name: 'Unknown', state: 'unknown' };
-      }
-
-      const output = {
-        success: true,
-        sprint: sprintInfo,
-        movedTasks: taskKeys,
-        message: `Successfully moved ${taskKeys.length} task(s) to sprint "${sprintInfo.name}"`
-      };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      const output = { success: true, sprint: sprintInfo, movedTasks: taskKeys, message: `Moved ${taskKeys.length} task(s) to "${sprintInfo.name}"` };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
-  // Tool 13: Get Sprint Tasks (All team members)
+  // Helper: Get sprint info (used by Tool 13 & 14)
+  async function getSprintInfo(sprintId, boardId, defaultBoardId) {
+    const effectiveBoardId = boardId || defaultBoardId;
+    let targetSprintId = sprintId;
+    let sprintInfo = null;
+
+    if (!targetSprintId) {
+      if (!effectiveBoardId) {
+        throw new Error('Either boardId or sprintId is required.');
+      }
+      const activeSprint = await jiraService.getActiveSprint(effectiveBoardId);
+      if (!activeSprint) throw new Error(`No active sprint for board ${effectiveBoardId}`);
+      targetSprintId = activeSprint.id;
+      sprintInfo = {
+        id: activeSprint.id, name: activeSprint.name, state: activeSprint.state,
+        startDate: activeSprint.startDate ? moment(activeSprint.startDate).format('YYYY-MM-DD') : null,
+        endDate: activeSprint.endDate ? moment(activeSprint.endDate).format('YYYY-MM-DD') : null
+      };
+    } else {
+      const sprint = await jiraService.getSprint(targetSprintId).catch(() => null);
+      sprintInfo = sprint ? {
+        id: sprint.id, name: sprint.name, state: sprint.state,
+        startDate: sprint.startDate ? moment(sprint.startDate).format('YYYY-MM-DD') : null,
+        endDate: sprint.endDate ? moment(sprint.endDate).format('YYYY-MM-DD') : null
+      } : { id: targetSprintId, name: 'Unknown', state: 'unknown' };
+    }
+    return { targetSprintId, sprintInfo };
+  }
+
+  // Tool 13: Get Sprint Tasks
   mcpServer.registerTool(
     'get_sprint_tasks',
     {
       title: 'Get Sprint Tasks',
-      description: 'Get all tasks in a sprint for all team members. Use boardId to get active sprint or sprintId for specific sprint.',
+      description: 'Get all tasks in a sprint for all team members',
       inputSchema: z.object({
-        boardId: z.number().optional().describe(`Board ID to get active sprint tasks${jiraService.defaultBoardId ? `. Default: ${jiraService.defaultBoardId}` : ''}`),
-        sprintId: z.number().optional().describe('Sprint ID for specific sprint (overrides boardId)'),
+        boardId: z.number().optional().describe('Board ID for active sprint'),
+        sprintId: z.number().optional().describe('Sprint ID (overrides boardId)'),
         status: z.enum(['all', 'todo', 'in-progress', 'done']).default('all')
-          .describe('Filter by status: all, todo, in-progress, done')
-      }),
-      outputSchema: z.object({
-        sprint: z.object({
-          id: z.number(),
-          name: z.string(),
-          state: z.string()
-        }),
-        total: z.number(),
-        tasks: z.array(z.object({
-          key: z.string(),
-          summary: z.string(),
-          status: z.string(),
-          assignee: z.string(),
-          storyPoints: z.number().nullable()
-        }))
       })
     },
     async ({ boardId, sprintId, status }) => {
-      // Use defaults from config if not provided
-      const effectiveBoardId = boardId || jiraService.defaultBoardId;
-      
-      let targetSprintId = sprintId;
-      let sprintInfo = null;
+      const { targetSprintId, sprintInfo } = await getSprintInfo(sprintId, boardId, jiraService.defaultBoardId);
 
-      // If no sprintId, get active sprint from board
-      if (!targetSprintId) {
-        if (!effectiveBoardId) {
-          throw new Error('Either boardId or sprintId is required. Set --default_board_id in MCP config or provide boardId/sprintId parameter.');
-        }
-        
-        const activeSprint = await jiraService.getActiveSprint(effectiveBoardId);
-        if (!activeSprint) {
-          throw new Error(`No active sprint found for board ${effectiveBoardId}`);
-        }
-        targetSprintId = activeSprint.id;
-        sprintInfo = {
-          id: activeSprint.id,
-          name: activeSprint.name,
-          state: activeSprint.state,
-          startDate: activeSprint.startDate ? moment(activeSprint.startDate).format('YYYY-MM-DD') : null,
-          endDate: activeSprint.endDate ? moment(activeSprint.endDate).format('YYYY-MM-DD') : null
-        };
-      } else {
-        // Get sprint info for provided sprintId
-        try {
-          const sprint = await jiraService.getSprint(targetSprintId);
-          sprintInfo = {
-            id: sprint.id,
-            name: sprint.name,
-            state: sprint.state,
-            startDate: sprint.startDate ? moment(sprint.startDate).format('YYYY-MM-DD') : null,
-            endDate: sprint.endDate ? moment(sprint.endDate).format('YYYY-MM-DD') : null
-          };
-        } catch (_e) {
-          sprintInfo = { id: targetSprintId, name: 'Unknown', state: 'unknown' };
-        }
-      }
-
-      // Build JQL query
       let jql = `sprint = ${targetSprintId}`;
-      
-      // Add status filter
-      if (status === 'todo') {
-        jql += ' AND status IN ("To Do", "Open", "New", "Backlog")';
-      } else if (status === 'in-progress') {
-        jql += ' AND status IN ("In Progress", "In Development", "In Review")';
-      } else if (status === 'done') {
-        jql += ' AND status IN ("Done", "Closed", "Resolved")';
-      }
+      const statusMap = {
+        'todo': ' AND status IN ("To Do", "Open", "New", "Backlog")',
+        'in-progress': ' AND status IN ("In Progress", "In Development", "In Review")',
+        'done': ' AND status IN ("Done", "Closed", "Resolved")'
+      };
+      if (statusMap[status]) jql += statusMap[status];
 
-      // Search for tasks
-      const result = await jiraService.searchIssues(
-        jql,
-        'summary,status,assignee,priority,duedate,customfield_10015,customfield_10016,issuetype,subtasks'
-      );
+      const result = await jiraService.searchIssues(jql,
+        'summary,status,assignee,priority,duedate,customfield_10015,customfield_10016,issuetype,subtasks');
 
-      // Group tasks by assignee
       const tasksByAssignee = {};
       const tasks = result.issues.map(issue => {
-        const assigneeName = issue.fields.assignee ? issue.fields.assignee.displayName : 'Unassigned';
-        const assigneeId = issue.fields.assignee ? issue.fields.assignee.accountId : 'unassigned';
+        const assigneeName = issue.fields.assignee?.displayName || 'Unassigned';
+        const assigneeId = issue.fields.assignee?.accountId || 'unassigned';
+        const storyPoints = issue.fields.customfield_10016 || 0;
         
         if (!tasksByAssignee[assigneeId]) {
-          tasksByAssignee[assigneeId] = {
-            name: assigneeName,
-            tasks: [],
-            totalStoryPoints: 0
-          };
+          tasksByAssignee[assigneeId] = { name: assigneeName, tasks: [], totalStoryPoints: 0 };
         }
-        
-        const storyPoints = issue.fields.customfield_10016 || 0;
         tasksByAssignee[assigneeId].tasks.push(issue.key);
         tasksByAssignee[assigneeId].totalStoryPoints += storyPoints;
 
         return {
-          key: issue.key,
-          summary: issue.fields.summary,
-          status: issue.fields.status.name,
-          priority: issue.fields.priority ? issue.fields.priority.name : 'None',
-          assignee: assigneeName,
-          assigneeId: assigneeId,
-          issueType: issue.fields.issuetype.name,
-          isSubtask: issue.fields.issuetype.subtask,
-          storyPoints: storyPoints,
-          startDate: issue.fields.customfield_10015 || null,
-          dueDate: issue.fields.duedate || null,
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+          key: issue.key, summary: issue.fields.summary, status: issue.fields.status.name,
+          priority: issue.fields.priority?.name || 'None', assignee: assigneeName, assigneeId,
+          issueType: issue.fields.issuetype.name, isSubtask: issue.fields.issuetype.subtask,
+          storyPoints, startDate: issue.fields.customfield_10015 || null,
+          dueDate: issue.fields.duedate || null, url: buildIssueUrl(jiraService.cloudId, issue.key)
         };
       });
 
-      // Calculate team summary
-      const teamSummary = Object.values(tasksByAssignee).map(member => ({
-        name: member.name,
-        taskCount: member.tasks.length,
-        totalStoryPoints: member.totalStoryPoints
-      })).sort((a, b) => b.totalStoryPoints - a.totalStoryPoints);
-
-      const totalStoryPoints = tasks.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
+      const teamSummary = Object.values(tasksByAssignee)
+        .map(m => ({ name: m.name, taskCount: m.tasks.length, totalStoryPoints: m.totalStoryPoints }))
+        .sort((a, b) => b.totalStoryPoints - a.totalStoryPoints);
 
       const output = {
-        sprint: sprintInfo,
-        total: tasks.length,
-        totalStoryPoints: totalStoryPoints,
-        statusFilter: status,
-        teamSummary: teamSummary,
-        tasks: tasks
+        sprint: sprintInfo, total: tasks.length,
+        totalStoryPoints: tasks.reduce((sum, t) => sum + (t.storyPoints || 0), 0),
+        statusFilter: status, teamSummary, tasks
       };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 
-  // Tool 14: Get Sprint Daily Tasks (All team members - In Progress tasks for daily standup)
+
+  // Tool 14: Get Sprint Daily Tasks (for daily standup)
   mcpServer.registerTool(
     'get_sprint_daily_tasks',
     {
       title: 'Get Sprint Daily Tasks',
-      description: 'Get In Progress tasks for all team members in a sprint. Perfect for daily standup. Only shows tasks that are In Progress - if a task has subtasks, only In Progress subtasks are shown. Subtasks of non-In Progress parents are excluded.',
+      description: 'Get In Progress tasks for all team members. Perfect for daily standup.',
       inputSchema: z.object({
-        boardId: z.number().optional().describe(`Board ID to get active sprint${jiraService.defaultBoardId ? `. Default: ${jiraService.defaultBoardId}` : ''}`),
-        sprintId: z.number().optional().describe('Sprint ID for specific sprint (overrides boardId)')
-      }),
-      outputSchema: z.object({
-        sprint: z.object({
-          id: z.number(),
-          name: z.string()
-        }),
-        total: z.number(),
-        teamWorkload: z.array(z.object({
-          assignee: z.string(),
-          taskCount: z.number()
-        })),
-        tasks: z.array(z.object({
-          key: z.string(),
-          summary: z.string(),
-          assignee: z.string(),
-          status: z.string()
-        }))
+        boardId: z.number().optional().describe('Board ID for active sprint'),
+        sprintId: z.number().optional().describe('Sprint ID (overrides boardId)')
       })
     },
     async ({ boardId, sprintId }) => {
-      // Use defaults
-      const effectiveBoardId = boardId || jiraService.defaultBoardId;
-      
-      let targetSprintId = sprintId;
-      let sprintInfo = null;
+      const { targetSprintId, sprintInfo } = await getSprintInfo(sprintId, boardId, jiraService.defaultBoardId);
 
-      // If no sprintId, get active sprint from board
-      if (!targetSprintId) {
-        if (!effectiveBoardId) {
-          throw new Error('Either boardId or sprintId is required. Set --default_board_id in MCP config or provide boardId/sprintId parameter.');
-        }
-        
-        const activeSprint = await jiraService.getActiveSprint(effectiveBoardId);
-        if (!activeSprint) {
-          throw new Error(`No active sprint found for board ${effectiveBoardId}`);
-        }
-        targetSprintId = activeSprint.id;
-        sprintInfo = {
-          id: activeSprint.id,
-          name: activeSprint.name,
-          state: activeSprint.state,
-          startDate: activeSprint.startDate ? moment(activeSprint.startDate).format('YYYY-MM-DD') : null,
-          endDate: activeSprint.endDate ? moment(activeSprint.endDate).format('YYYY-MM-DD') : null
-        };
-      } else {
-        try {
-          const sprint = await jiraService.getSprint(targetSprintId);
-          sprintInfo = {
-            id: sprint.id,
-            name: sprint.name,
-            state: sprint.state,
-            startDate: sprint.startDate ? moment(sprint.startDate).format('YYYY-MM-DD') : null,
-            endDate: sprint.endDate ? moment(sprint.endDate).format('YYYY-MM-DD') : null
-          };
-        } catch (_e) {
-          sprintInfo = { id: targetSprintId, name: 'Unknown', state: 'unknown' };
-        }
-      }
-
-      // Build JQL - get all In Progress tasks/subtasks in sprint
       const jql = `sprint = ${targetSprintId} AND status IN ("In Progress", "In Development", "In Review")`;
-      
-      const result = await jiraService.searchIssues(
-        jql,
-        'summary,status,assignee,priority,duedate,customfield_10015,customfield_10016,issuetype,subtasks,parent'
-      );
+      const result = await jiraService.searchIssues(jql,
+        'summary,status,assignee,priority,duedate,customfield_10015,customfield_10016,issuetype,subtasks,parent');
 
-      // Process tasks - group by parent if subtask
-      const tasksMap = new Map(); // key -> task data
-      const parentTasksWithInProgressSubtasks = new Set(); // parent keys that have In Progress subtasks
+      const tasksMap = new Map();
+      const parentTasksWithInProgressSubtasks = new Set();
 
       // First pass: identify all In Progress items
       for (const issue of result.issues) {
         const isSubtask = issue.fields.issuetype.subtask;
         const parentKey = issue.fields.parent?.key || null;
-        
-        const assigneeName = issue.fields.assignee ? issue.fields.assignee.displayName : 'Unassigned';
-        const assigneeId = issue.fields.assignee ? issue.fields.assignee.accountId : 'unassigned';
+        const assigneeName = issue.fields.assignee?.displayName || 'Unassigned';
+        const assigneeId = issue.fields.assignee?.accountId || 'unassigned';
         const storyPoints = issue.fields.customfield_10016 || 0;
         
         const taskData = {
-          key: issue.key,
-          summary: issue.fields.summary,
-          status: issue.fields.status.name,
-          priority: issue.fields.priority ? issue.fields.priority.name : 'None',
-          assignee: assigneeName,
-          assigneeId: assigneeId,
-          issueType: issue.fields.issuetype.name,
-          isSubtask: isSubtask,
-          parentKey: parentKey,
-          storyPoints: storyPoints,
-          startDate: issue.fields.customfield_10015 || null,
-          dueDate: issue.fields.duedate || null,
-          inProgressSubtasks: [], // Will be populated for parent tasks
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+          key: issue.key, summary: issue.fields.summary, status: issue.fields.status.name,
+          priority: issue.fields.priority?.name || 'None', assignee: assigneeName, assigneeId,
+          issueType: issue.fields.issuetype.name, isSubtask, parentKey, storyPoints,
+          startDate: issue.fields.customfield_10015 || null, dueDate: issue.fields.duedate || null,
+          inProgressSubtasks: [], url: buildIssueUrl(jiraService.cloudId, issue.key)
         };
-
         tasksMap.set(issue.key, taskData);
-
-        // Track parent tasks that have In Progress subtasks
-        if (isSubtask && parentKey) {
-          parentTasksWithInProgressSubtasks.add(parentKey);
-        }
+        if (isSubtask && parentKey) parentTasksWithInProgressSubtasks.add(parentKey);
       }
 
-      // Second pass: For parent tasks In Progress, fetch their In Progress subtasks
+      // Second pass: organize tasks
       const finalTasks = [];
       const processedSubtasks = new Set();
 
       for (const [key, task] of tasksMap) {
-        if (task.isSubtask) {
-          // Subtask - will be handled with parent or standalone
-          continue;
-        }
+        if (task.isSubtask) continue;
 
-        // This is a parent task or standalone task that is In Progress
         const hasSubtasks = result.issues.find(i => i.key === key)?.fields.subtasks?.length > 0;
         
         if (hasSubtasks) {
-          // Parent task In Progress - find its In Progress subtasks from our results
           const inProgressSubtasks = [];
           for (const [subKey, subTask] of tasksMap) {
             if (subTask.parentKey === key) {
               inProgressSubtasks.push({
-                key: subTask.key,
-                summary: subTask.summary,
-                status: subTask.status,
-                assignee: subTask.assignee,
-                storyPoints: subTask.storyPoints
+                key: subTask.key, summary: subTask.summary, status: subTask.status,
+                assignee: subTask.assignee, storyPoints: subTask.storyPoints
               });
               processedSubtasks.add(subKey);
             }
           }
-          
           task.inProgressSubtasks = inProgressSubtasks;
           task.hasInProgressSubtasks = inProgressSubtasks.length > 0;
           finalTasks.push(task);
         } else {
-          // Standalone task (no subtasks) - include directly
           finalTasks.push(task);
         }
       }
 
-      // NOTE: Orphan subtasks (subtasks In Progress whose parent is NOT In Progress) are NOT included
-      // Only show subtasks if their parent task is also In Progress
-
       // Calculate team workload
       const workloadByAssignee = {};
-      
-      // Count tasks per assignee (including subtasks)
       for (const task of finalTasks) {
         const assigneeId = task.assigneeId;
         if (!workloadByAssignee[assigneeId]) {
-          workloadByAssignee[assigneeId] = {
-            assignee: task.assignee,
-            taskCount: 0,
-            tasks: []
-          };
+          workloadByAssignee[assigneeId] = { assignee: task.assignee, taskCount: 0, tasks: [] };
         }
         
         if (task.isSubtask || !task.hasInProgressSubtasks) {
-          // Count standalone tasks and subtasks
           workloadByAssignee[assigneeId].taskCount++;
           workloadByAssignee[assigneeId].tasks.push(task.key);
         }
         
-        // Count In Progress subtasks of parent tasks
-        if (task.inProgressSubtasks && task.inProgressSubtasks.length > 0) {
+        if (task.inProgressSubtasks?.length) {
           for (const sub of task.inProgressSubtasks) {
             const subAssigneeId = tasksMap.get(sub.key)?.assigneeId || 'unassigned';
             const subAssigneeName = tasksMap.get(sub.key)?.assignee || 'Unassigned';
             if (!workloadByAssignee[subAssigneeId]) {
-              workloadByAssignee[subAssigneeId] = {
-                assignee: subAssigneeName,
-                taskCount: 0,
-                tasks: []
-              };
+              workloadByAssignee[subAssigneeId] = { assignee: subAssigneeName, taskCount: 0, tasks: [] };
             }
             workloadByAssignee[subAssigneeId].taskCount++;
             workloadByAssignee[subAssigneeId].tasks.push(sub.key);
@@ -1432,19 +783,12 @@ export function registerJiraTools(mcpServer, jiraService) {
       }
 
       const teamWorkload = Object.values(workloadByAssignee)
-        .map(w => ({
-          assignee: w.assignee,
-          taskCount: w.taskCount,
-          tasks: w.tasks
-        }))
+        .map(w => ({ assignee: w.assignee, taskCount: w.taskCount, tasks: w.tasks }))
         .sort((a, b) => b.taskCount - a.taskCount);
 
-      // Count totals
       const parentTasksWithSubtasks = finalTasks.filter(t => !t.isSubtask && t.hasInProgressSubtasks);
       const standaloneTasksNoSubtasks = finalTasks.filter(t => !t.isSubtask && !t.hasInProgressSubtasks);
       const totalSubtasks = finalTasks.reduce((sum, t) => sum + (t.inProgressSubtasks?.length || 0), 0);
-      
-      // Total = standalone tasks + subtasks (parent tasks are containers, not counted)
       const totalInProgressItems = standaloneTasksNoSubtasks.length + totalSubtasks;
 
       const output = {
@@ -1455,14 +799,10 @@ export function registerJiraTools(mcpServer, jiraService) {
         standaloneTasksCount: standaloneTasksNoSubtasks.length,
         subtasksCount: totalSubtasks,
         teamMemberCount: teamWorkload.length,
-        teamWorkload: teamWorkload,
+        teamWorkload,
         tasks: finalTasks
       };
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
-        structuredContent: output
-      };
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], structuredContent: output };
     }
   );
 }

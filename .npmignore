@@ -1,0 +1,29 @@
+# Development files
+.claude/
+.github/
+.vscode/
+.git/
+.gitignore
+
+# Config files
+eslint.config.js
+nodemon.json
+
+# Logs
+logs/
+*.log
+
+# Test files
+test/
+tests/
+__tests__/
+*.test.js
+*.spec.js
+coverage/
+
+# Misc
+.DS_Store
+.env
+.env.*
+*.md
+!README.md

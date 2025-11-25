@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0-alpha.5] - 2025-11-26
+
+### Changed
+- **Code Refactoring**: Extracted common date/working day helpers to `utils/dateHelpers.js`
+- **Package Size Optimization**: Reduced package size by ~17% (24.7 kB → 20.6 kB)
+- **Code Reduction**: `jiraTools.js` reduced from 1468 to ~810 lines (45% smaller)
+- Added `.npmignore` to exclude dev files from published package
+
+### Removed
+- Duplicate Vietnamese holidays definitions
+- Duplicate working days calculation functions
+- Redundant outputSchema definitions
+
 ## [1.1.0-alpha.4] - 2025-11-26
 
 ### Fixed
