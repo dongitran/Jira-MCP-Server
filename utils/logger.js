@@ -34,7 +34,7 @@ class Logger {
       }
 
       fs.appendFileSync(this.logFile, logEntry);
-    } catch (error) {
+    } catch (_error) {
       // Silently fail - don't use console.error in MCP server
     }
   }

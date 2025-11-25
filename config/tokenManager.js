@@ -59,7 +59,7 @@ class TokenManager {
           return cached.cloudId;
         }
       }
-    } catch (error) {
+    } catch (_error) {
       // Ignore cache errors
     }
     return null;
@@ -178,7 +178,7 @@ class TokenManager {
       let tokenPayload;
       try {
         tokenPayload = this.decodeJWT(this.accessToken);
-      } catch (decodeError) {
+      } catch (_decodeError) {
         // Token is invalid or malformed, force refresh
         // Only log critical errors
         console.error('⚠️  Token invalid, refreshing...');

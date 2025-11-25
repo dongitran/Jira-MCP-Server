@@ -383,7 +383,7 @@ export function registerJiraTools(mcpServer, jiraService) {
                 name: sprint.name,
                 state: sprint.state
               };
-            } catch (e) {
+            } catch (_e) {
               sprintInfo = { id: targetSprintId, name: 'Unknown', state: 'unknown' };
             }
           }
@@ -673,7 +673,7 @@ export function registerJiraTools(mcpServer, jiraService) {
               url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${subtaskDetail.key}`
             });
           } catch (error) {
-            logger.error(`Failed to fetch subtask ${subtask.key}`, error);
+            console.error(`Failed to fetch subtask ${subtask.key}:`, error.message);
           }
         }
       }
@@ -894,7 +894,7 @@ export function registerJiraTools(mcpServer, jiraService) {
       let jql = `assignee = "${user.accountId}" AND created <= "${currentMonth.endDate}"`;
 
       if (!includeCompleted) {
-        jql += ` AND status NOT IN ("Done", "Closed", "Resolved")`;
+        jql += ' AND status NOT IN ("Done", "Closed", "Resolved")';
       } else {
         jql += ` AND (status NOT IN ("Done", "Closed", "Resolved") OR resolved >= "${currentMonth.startDate}")`;
       }
@@ -1074,7 +1074,7 @@ export function registerJiraTools(mcpServer, jiraService) {
           name: sprint.name,
           state: sprint.state
         };
-      } catch (e) {
+      } catch (_e) {
         sprintInfo = { id: sprintId, name: 'Unknown', state: 'unknown' };
       }
 
