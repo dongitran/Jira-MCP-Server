@@ -43,8 +43,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify build
-        run: node server.js --help 2>&1 || true
+      - name: Run tests
+        run: npm test
+
+      - name: Run tests with coverage
+        if: matrix.node-version == '20'
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: matrix.node-version == '20'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
 
       - name: Check syntax
         run: node --check server.js
