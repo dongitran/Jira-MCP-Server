@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0-alpha.6] - 2025-11-26
+
+### Changed
+- **Reverted Code Refactoring**: Restored original `jiraTools.js` structure for better readability
+- Removed `utils/dateHelpers.js` - keeping date helpers inline for simpler codebase
+- Added `.npmignore` to exclude dev files from published package
+
 ## [1.1.0-alpha.5] - 2025-11-26
 
 ### Changed
