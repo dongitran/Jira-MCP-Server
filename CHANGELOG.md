@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0-alpha.3] - 2025-11-26
+
+### Added
+- **New Tool `get_sprint_tasks`**: Get all tasks in a sprint for ALL team members
+  - Filter by status: `all`, `todo`, `in-progress`, `done`
+  - Team summary with task count and story points per member
+  - Supports `boardId` (auto active sprint) or `sprintId` (specific sprint)
+- **New Tool `get_sprint_daily_tasks`**: Get In Progress tasks for daily standup
+  - Shows all In Progress tasks/subtasks for ALL team members
+  - Parent tasks In Progress with their In Progress subtasks nested
+  - Standalone tasks In Progress (no subtasks)
+  - Subtasks of non-In Progress parents are excluded
+  - Team workload breakdown per member
+  - Perfect for daily standup meetings
+
+### Changed
+- Total tools increased from 12 to 14
+
 ## [1.1.0-alpha.2] - 2025-11-25
 
 ### Added

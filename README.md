@@ -9,7 +9,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jir
 
 ## Features
 
-- ✅ **12 Powerful Tools** - Complete task management with sprint support & hours tracking
+- ✅ **14 Powerful Tools** - Complete task management with sprint support & team workload tracking
 - ✅ **Sprint Integration** - Auto-assign tasks to active sprint via boardId
 - ✅ **OAuth Authentication** - Secure auto-refresh tokens
 - ✅ **Zero Configuration** - No database, CLI-based setup
@@ -345,6 +345,61 @@ Move one or more existing tasks to a specific sprint.
   "taskKeys": ["URC-100", "URC-101", "URC-102"]
 }
 ```
+
+### 13. `get_sprint_tasks`
+Get all tasks in a sprint for all team members. Great for sprint overview and team workload analysis.
+
+**Parameters:**
+- `boardId`: Board ID to get active sprint (optional, uses default if set)
+- `sprintId`: Sprint ID for specific sprint (optional, overrides boardId)
+- `status`: Filter by status: `all`, `todo`, `in-progress`, `done` (default: `all`)
+
+**Example - Get all tasks in active sprint:**
+```json
+{
+  "boardId": 9
+}
+```
+
+**Example - Get only in-progress tasks:**
+```json
+{
+  "boardId": 9,
+  "status": "in-progress"
+}
+```
+
+**Response includes:**
+- Sprint info (id, name, state, dates)
+- All tasks with assignee, status, story points
+- Team summary with task count and total story points per member
+
+### 14. `get_sprint_daily_tasks`
+Get In Progress tasks for all team members in a sprint. Perfect for daily standup meetings.
+
+**Parameters:**
+- `boardId`: Board ID to get active sprint (optional, uses default if set)
+- `sprintId`: Sprint ID for specific sprint (optional, overrides boardId)
+
+**Example:**
+```json
+{
+  "boardId": 9
+}
+```
+
+**Response includes:**
+- Sprint info and current date
+- Team workload breakdown (task count per member)
+- All In Progress tasks with nested In Progress subtasks
+- Parent tasks count, standalone tasks count, subtasks count
+
+**Features:**
+- Shows only In Progress tasks (perfect for daily standup)
+- Parent tasks In Progress with their In Progress subtasks nested
+- Standalone tasks In Progress (no subtasks)
+- Subtasks of non-In Progress parents are excluded
+- Groups tasks by assignee for easy team overview
 
 ## Daily & Monthly Hours Calculation
 

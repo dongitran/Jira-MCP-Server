@@ -1091,4 +1091,378 @@ export function registerJiraTools(mcpServer, jiraService) {
       };
     }
   );
+
+  // Tool 13: Get Sprint Tasks (All team members)
+  mcpServer.registerTool(
+    'get_sprint_tasks',
+    {
+      title: 'Get Sprint Tasks',
+      description: 'Get all tasks in a sprint for all team members. Use boardId to get active sprint or sprintId for specific sprint.',
+      inputSchema: z.object({
+        boardId: z.number().optional().describe(`Board ID to get active sprint tasks${jiraService.defaultBoardId ? `. Default: ${jiraService.defaultBoardId}` : ''}`),
+        sprintId: z.number().optional().describe('Sprint ID for specific sprint (overrides boardId)'),
+        status: z.enum(['all', 'todo', 'in-progress', 'done']).default('all')
+          .describe('Filter by status: all, todo, in-progress, done')
+      }),
+      outputSchema: z.object({
+        sprint: z.object({
+          id: z.number(),
+          name: z.string(),
+          state: z.string()
+        }),
+        total: z.number(),
+        tasks: z.array(z.object({
+          key: z.string(),
+          summary: z.string(),
+          status: z.string(),
+          assignee: z.string(),
+          storyPoints: z.number().nullable()
+        }))
+      })
+    },
+    async ({ boardId, sprintId, status }) => {
+      // Use defaults from config if not provided
+      const effectiveBoardId = boardId || jiraService.defaultBoardId;
+      
+      let targetSprintId = sprintId;
+      let sprintInfo = null;
+
+      // If no sprintId, get active sprint from board
+      if (!targetSprintId) {
+        if (!effectiveBoardId) {
+          throw new Error('Either boardId or sprintId is required. Set --default_board_id in MCP config or provide boardId/sprintId parameter.');
+        }
+        
+        const activeSprint = await jiraService.getActiveSprint(effectiveBoardId);
+        if (!activeSprint) {
+          throw new Error(`No active sprint found for board ${effectiveBoardId}`);
+        }
+        targetSprintId = activeSprint.id;
+        sprintInfo = {
+          id: activeSprint.id,
+          name: activeSprint.name,
+          state: activeSprint.state,
+          startDate: activeSprint.startDate ? moment(activeSprint.startDate).format('YYYY-MM-DD') : null,
+          endDate: activeSprint.endDate ? moment(activeSprint.endDate).format('YYYY-MM-DD') : null
+        };
+      } else {
+        // Get sprint info for provided sprintId
+        try {
+          const sprint = await jiraService.getSprint(targetSprintId);
+          sprintInfo = {
+            id: sprint.id,
+            name: sprint.name,
+            state: sprint.state,
+            startDate: sprint.startDate ? moment(sprint.startDate).format('YYYY-MM-DD') : null,
+            endDate: sprint.endDate ? moment(sprint.endDate).format('YYYY-MM-DD') : null
+          };
+        } catch (_e) {
+          sprintInfo = { id: targetSprintId, name: 'Unknown', state: 'unknown' };
+        }
+      }
+
+      // Build JQL query
+      let jql = `sprint = ${targetSprintId}`;
+      
+      // Add status filter
+      if (status === 'todo') {
+        jql += ' AND status IN ("To Do", "Open", "New", "Backlog")';
+      } else if (status === 'in-progress') {
+        jql += ' AND status IN ("In Progress", "In Development", "In Review")';
+      } else if (status === 'done') {
+        jql += ' AND status IN ("Done", "Closed", "Resolved")';
+      }
+
+      // Search for tasks
+      const result = await jiraService.searchIssues(
+        jql,
+        'summary,status,assignee,priority,duedate,customfield_10015,customfield_10016,issuetype,subtasks'
+      );
+
+      // Group tasks by assignee
+      const tasksByAssignee = {};
+      const tasks = result.issues.map(issue => {
+        const assigneeName = issue.fields.assignee ? issue.fields.assignee.displayName : 'Unassigned';
+        const assigneeId = issue.fields.assignee ? issue.fields.assignee.accountId : 'unassigned';
+        
+        if (!tasksByAssignee[assigneeId]) {
+          tasksByAssignee[assigneeId] = {
+            name: assigneeName,
+            tasks: [],
+            totalStoryPoints: 0
+          };
+        }
+        
+        const storyPoints = issue.fields.customfield_10016 || 0;
+        tasksByAssignee[assigneeId].tasks.push(issue.key);
+        tasksByAssignee[assigneeId].totalStoryPoints += storyPoints;
+
+        return {
+          key: issue.key,
+          summary: issue.fields.summary,
+          status: issue.fields.status.name,
+          priority: issue.fields.priority ? issue.fields.priority.name : 'None',
+          assignee: assigneeName,
+          assigneeId: assigneeId,
+          issueType: issue.fields.issuetype.name,
+          isSubtask: issue.fields.issuetype.subtask,
+          storyPoints: storyPoints,
+          startDate: issue.fields.customfield_10015 || null,
+          dueDate: issue.fields.duedate || null,
+          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+        };
+      });
+
+      // Calculate team summary
+      const teamSummary = Object.values(tasksByAssignee).map(member => ({
+        name: member.name,
+        taskCount: member.tasks.length,
+        totalStoryPoints: member.totalStoryPoints
+      })).sort((a, b) => b.totalStoryPoints - a.totalStoryPoints);
+
+      const totalStoryPoints = tasks.reduce((sum, t) => sum + (t.storyPoints || 0), 0);
+
+      const output = {
+        sprint: sprintInfo,
+        total: tasks.length,
+        totalStoryPoints: totalStoryPoints,
+        statusFilter: status,
+        teamSummary: teamSummary,
+        tasks: tasks
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
+
+  // Tool 14: Get Sprint Daily Tasks (All team members - In Progress tasks for daily standup)
+  mcpServer.registerTool(
+    'get_sprint_daily_tasks',
+    {
+      title: 'Get Sprint Daily Tasks',
+      description: 'Get In Progress tasks for all team members in a sprint. Perfect for daily standup. Only shows tasks that are In Progress - if a task has subtasks, only In Progress subtasks are shown. Subtasks of non-In Progress parents are excluded.',
+      inputSchema: z.object({
+        boardId: z.number().optional().describe(`Board ID to get active sprint${jiraService.defaultBoardId ? `. Default: ${jiraService.defaultBoardId}` : ''}`),
+        sprintId: z.number().optional().describe('Sprint ID for specific sprint (overrides boardId)')
+      }),
+      outputSchema: z.object({
+        sprint: z.object({
+          id: z.number(),
+          name: z.string()
+        }),
+        total: z.number(),
+        teamWorkload: z.array(z.object({
+          assignee: z.string(),
+          taskCount: z.number()
+        })),
+        tasks: z.array(z.object({
+          key: z.string(),
+          summary: z.string(),
+          assignee: z.string(),
+          status: z.string()
+        }))
+      })
+    },
+    async ({ boardId, sprintId }) => {
+      // Use defaults
+      const effectiveBoardId = boardId || jiraService.defaultBoardId;
+      
+      let targetSprintId = sprintId;
+      let sprintInfo = null;
+
+      // If no sprintId, get active sprint from board
+      if (!targetSprintId) {
+        if (!effectiveBoardId) {
+          throw new Error('Either boardId or sprintId is required. Set --default_board_id in MCP config or provide boardId/sprintId parameter.');
+        }
+        
+        const activeSprint = await jiraService.getActiveSprint(effectiveBoardId);
+        if (!activeSprint) {
+          throw new Error(`No active sprint found for board ${effectiveBoardId}`);
+        }
+        targetSprintId = activeSprint.id;
+        sprintInfo = {
+          id: activeSprint.id,
+          name: activeSprint.name,
+          state: activeSprint.state,
+          startDate: activeSprint.startDate ? moment(activeSprint.startDate).format('YYYY-MM-DD') : null,
+          endDate: activeSprint.endDate ? moment(activeSprint.endDate).format('YYYY-MM-DD') : null
+        };
+      } else {
+        try {
+          const sprint = await jiraService.getSprint(targetSprintId);
+          sprintInfo = {
+            id: sprint.id,
+            name: sprint.name,
+            state: sprint.state,
+            startDate: sprint.startDate ? moment(sprint.startDate).format('YYYY-MM-DD') : null,
+            endDate: sprint.endDate ? moment(sprint.endDate).format('YYYY-MM-DD') : null
+          };
+        } catch (_e) {
+          sprintInfo = { id: targetSprintId, name: 'Unknown', state: 'unknown' };
+        }
+      }
+
+      // Build JQL - get all In Progress tasks/subtasks in sprint
+      const jql = `sprint = ${targetSprintId} AND status IN ("In Progress", "In Development", "In Review")`;
+      
+      const result = await jiraService.searchIssues(
+        jql,
+        'summary,status,assignee,priority,duedate,customfield_10015,customfield_10016,issuetype,subtasks,parent'
+      );
+
+      // Process tasks - group by parent if subtask
+      const tasksMap = new Map(); // key -> task data
+      const parentTasksWithInProgressSubtasks = new Set(); // parent keys that have In Progress subtasks
+
+      // First pass: identify all In Progress items
+      for (const issue of result.issues) {
+        const isSubtask = issue.fields.issuetype.subtask;
+        const parentKey = issue.fields.parent?.key || null;
+        
+        const assigneeName = issue.fields.assignee ? issue.fields.assignee.displayName : 'Unassigned';
+        const assigneeId = issue.fields.assignee ? issue.fields.assignee.accountId : 'unassigned';
+        const storyPoints = issue.fields.customfield_10016 || 0;
+        
+        const taskData = {
+          key: issue.key,
+          summary: issue.fields.summary,
+          status: issue.fields.status.name,
+          priority: issue.fields.priority ? issue.fields.priority.name : 'None',
+          assignee: assigneeName,
+          assigneeId: assigneeId,
+          issueType: issue.fields.issuetype.name,
+          isSubtask: isSubtask,
+          parentKey: parentKey,
+          storyPoints: storyPoints,
+          startDate: issue.fields.customfield_10015 || null,
+          dueDate: issue.fields.duedate || null,
+          inProgressSubtasks: [], // Will be populated for parent tasks
+          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+        };
+
+        tasksMap.set(issue.key, taskData);
+
+        // Track parent tasks that have In Progress subtasks
+        if (isSubtask && parentKey) {
+          parentTasksWithInProgressSubtasks.add(parentKey);
+        }
+      }
+
+      // Second pass: For parent tasks In Progress, fetch their In Progress subtasks
+      const finalTasks = [];
+      const processedSubtasks = new Set();
+
+      for (const [key, task] of tasksMap) {
+        if (task.isSubtask) {
+          // Subtask - will be handled with parent or standalone
+          continue;
+        }
+
+        // This is a parent task or standalone task that is In Progress
+        const hasSubtasks = result.issues.find(i => i.key === key)?.fields.subtasks?.length > 0;
+        
+        if (hasSubtasks) {
+          // Parent task In Progress - find its In Progress subtasks from our results
+          const inProgressSubtasks = [];
+          for (const [subKey, subTask] of tasksMap) {
+            if (subTask.parentKey === key) {
+              inProgressSubtasks.push({
+                key: subTask.key,
+                summary: subTask.summary,
+                status: subTask.status,
+                assignee: subTask.assignee,
+                storyPoints: subTask.storyPoints
+              });
+              processedSubtasks.add(subKey);
+            }
+          }
+          
+          task.inProgressSubtasks = inProgressSubtasks;
+          task.hasInProgressSubtasks = inProgressSubtasks.length > 0;
+          finalTasks.push(task);
+        } else {
+          // Standalone task (no subtasks) - include directly
+          finalTasks.push(task);
+        }
+      }
+
+      // NOTE: Orphan subtasks (subtasks In Progress whose parent is NOT In Progress) are NOT included
+      // Only show subtasks if their parent task is also In Progress
+
+      // Calculate team workload
+      const workloadByAssignee = {};
+      
+      // Count tasks per assignee (including subtasks)
+      for (const task of finalTasks) {
+        const assigneeId = task.assigneeId;
+        if (!workloadByAssignee[assigneeId]) {
+          workloadByAssignee[assigneeId] = {
+            assignee: task.assignee,
+            taskCount: 0,
+            tasks: []
+          };
+        }
+        
+        if (task.isSubtask || !task.hasInProgressSubtasks) {
+          // Count standalone tasks and subtasks
+          workloadByAssignee[assigneeId].taskCount++;
+          workloadByAssignee[assigneeId].tasks.push(task.key);
+        }
+        
+        // Count In Progress subtasks of parent tasks
+        if (task.inProgressSubtasks && task.inProgressSubtasks.length > 0) {
+          for (const sub of task.inProgressSubtasks) {
+            const subAssigneeId = tasksMap.get(sub.key)?.assigneeId || 'unassigned';
+            const subAssigneeName = tasksMap.get(sub.key)?.assignee || 'Unassigned';
+            if (!workloadByAssignee[subAssigneeId]) {
+              workloadByAssignee[subAssigneeId] = {
+                assignee: subAssigneeName,
+                taskCount: 0,
+                tasks: []
+              };
+            }
+            workloadByAssignee[subAssigneeId].taskCount++;
+            workloadByAssignee[subAssigneeId].tasks.push(sub.key);
+          }
+        }
+      }
+
+      const teamWorkload = Object.values(workloadByAssignee)
+        .map(w => ({
+          assignee: w.assignee,
+          taskCount: w.taskCount,
+          tasks: w.tasks
+        }))
+        .sort((a, b) => b.taskCount - a.taskCount);
+
+      // Count totals
+      const parentTasksWithSubtasks = finalTasks.filter(t => !t.isSubtask && t.hasInProgressSubtasks);
+      const standaloneTasksNoSubtasks = finalTasks.filter(t => !t.isSubtask && !t.hasInProgressSubtasks);
+      const totalSubtasks = finalTasks.reduce((sum, t) => sum + (t.inProgressSubtasks?.length || 0), 0);
+      
+      // Total = standalone tasks + subtasks (parent tasks are containers, not counted)
+      const totalInProgressItems = standaloneTasksNoSubtasks.length + totalSubtasks;
+
+      const output = {
+        date: moment().format('YYYY-MM-DD'),
+        sprint: sprintInfo,
+        total: totalInProgressItems,
+        parentTasksCount: parentTasksWithSubtasks.length,
+        standaloneTasksCount: standaloneTasksNoSubtasks.length,
+        subtasksCount: totalSubtasks,
+        teamMemberCount: teamWorkload.length,
+        teamWorkload: teamWorkload,
+        tasks: finalTasks
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
 }
