@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0-alpha.4] - 2025-11-26
+
+### Fixed
+- Downgraded zod from v4 to v3.23.8 for better compatibility
+- Updated GitHub Actions checkout to v4
+
 ## [1.1.0-alpha.3] - 2025-11-26
 
 ### Added
