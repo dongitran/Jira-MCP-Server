@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0-alpha.2] - 2025-11-25
+
+### Added
+- **Sprint Support for `create_task`**: New parameters `sprintId` and `boardId` to assign tasks to sprints
+  - `sprintId`: Direct sprint assignment by ID
+  - `boardId`: Auto-assign to active sprint of the board
+- **Default Project & Board Config**: New CLI args `--default_project` and `--default_board_id`
+  - Set once in MCP config, no need to specify every time
+  - Tasks auto-assign to active sprint when `default_board_id` is set
+- **New Tool `get_board_sprints`**: Get all sprints for a board (active, future, closed)
+- **New Tool `move_to_sprint`**: Move existing tasks to a specific sprint
+- **Agile API Support**: Added `makeAgileRequest()` for Sprint operations via `/rest/agile/1.0/`
+
+### Example Usage
+```javascript
+// Minimal - uses defaults from config (default_project + default_board_id)
+create_task({ summary: "New feature" })
+
+// Override defaults if needed
+create_task({ project: "OTHER", summary: "New feature", boardId: 10 })
+```
+
 ## [1.1.0-alpha.1] - 2025-11-21
 
 ### Added

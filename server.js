@@ -48,7 +48,18 @@ if (!jiraService.cloudId) {
 jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`;
 console.error(`☁️  Using Cloud ID: ${jiraService.cloudId}`);
 
-const SERVER_VERSION = '1.1.0-alpha.1';
+// Set default project and board from config (optional)
+jiraService.defaultProject = config.default_project || null;
+jiraService.defaultBoardId = config.default_board_id ? parseInt(config.default_board_id) : null;
+
+if (jiraService.defaultProject) {
+  console.error(`📁 Default Project: ${jiraService.defaultProject}`);
+}
+if (jiraService.defaultBoardId) {
+  console.error(`📋 Default Board ID: ${jiraService.defaultBoardId} (auto-assign to active sprint)`);
+}
+
+const SERVER_VERSION = '1.1.0-alpha.2';
 
 // Main async function
 async function main() {

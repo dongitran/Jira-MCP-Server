@@ -58,9 +58,22 @@ class JiraService {
   }
 
   /**
-   * Make HTTP request with retry logic
+   * Make HTTP request with retry logic and circuit breaker
+   * @param {string} endpoint - API endpoint (e.g., /myself, /issue/KEY-123)
+   * @param {string} method - HTTP method
+   * @param {object} data - Request body
+   * @param {object} options - Additional options
+   * @param {string} options.apiType - 'rest' (default) or 'agile'
+   * @param {number} options.retryCount - Current retry attempt (internal use)
+   * @param {boolean} options.forceTokenRefresh - Force token refresh (internal use)
    */
-  async makeRequest(endpoint, method = 'GET', data = null, retryCount = 0, forceTokenRefresh = false) {
+  async makeRequest(endpoint, method = 'GET', data = null, options = {}) {
+    const { apiType = 'rest', retryCount = 0, forceTokenRefresh = false } = options;
+    
+    // Build full endpoint based on API type
+    const apiPath = apiType === 'agile' ? '/rest/agile/1.0' : '/rest/api/3';
+    const fullEndpoint = `${apiPath}${endpoint}`;
+
     // Check circuit breaker
     if (!this.circuitBreaker.canAttempt()) {
       const state = this.circuitBreaker.getState();
@@ -73,7 +86,7 @@ class JiraService {
     }
 
     try {
-      // Validate and refresh token only on first attempt or when forced (after 401 error)
+      // Validate and refresh token only on first attempt or when forced
       if (retryCount === 0 || forceTokenRefresh) {
         await tokenManager.validateAndRefreshToken();
         this.accessToken = tokenManager.getAccessToken();
@@ -81,7 +94,7 @@ class JiraService {
       
       const config = {
         method,
-        url: `${this.baseURL}/rest/api/3${endpoint}`,
+        url: `${this.baseURL}${fullEndpoint}`,
         headers: {
           'Authorization': `Bearer ${this.accessToken}`,
           'Accept': 'application/json',
@@ -99,78 +112,64 @@ class JiraService {
       // Record success in circuit breaker
       this.circuitBreaker.recordSuccess();
       
-      // Log success on retry (only to file, not stderr to avoid noise)
       if (retryCount > 0) {
-        logger.info(`Request succeeded after ${retryCount} retries: ${method} ${endpoint}`);
+        logger.info(`Request succeeded after ${retryCount} retries: ${method} ${fullEndpoint}`);
       }
       
       return response.data;
     } catch (error) {
-      // Special handling for 401 Unauthorized - token might be expired
-      // Only try to refresh token once per request to avoid infinite loop
+      // Handle 401 with token refresh
       if (error.response?.status === 401 && !forceTokenRefresh && retryCount === 0) {
         logger.warn('Got 401 Unauthorized, forcing token refresh and retrying once...');
         try {
           await tokenManager.validateAndRefreshToken();
           this.accessToken = tokenManager.getAccessToken();
-          // Retry with forceTokenRefresh=true to prevent infinite loop
-          return this.makeRequest(endpoint, method, data, 0, true);
+          return this.makeRequest(endpoint, method, data, { apiType, retryCount: 0, forceTokenRefresh: true });
         } catch (refreshError) {
           console.error('❌ Token refresh failed after 401:', refreshError.message);
-          // Fall through to normal error handling
         }
       }
 
       const isRetryable = this.isRetryableError(error);
       const isLastAttempt = retryCount >= this.maxRetries - 1;
       
-      // Log error details
       const errorInfo = {
-        endpoint,
+        endpoint: fullEndpoint,
         method,
         attempt: retryCount + 1,
         maxRetries: this.maxRetries,
         status: error.response?.status,
-        statusText: error.response?.statusText,
         message: error.message,
         isRetryable,
         isLastAttempt
       };
 
-      // Log to stderr only on last attempt to reduce noise
       if (isLastAttempt) {
-        console.error(`⚠️  Jira API error [${method} ${endpoint}]:`, JSON.stringify({
+        console.error(`⚠️  API error [${method} ${fullEndpoint}]:`, JSON.stringify({
           status: error.response?.status,
           message: error.message,
           attempt: retryCount + 1
         }));
       }
 
-      // Also log to file
-      logger.error(`Jira API error for ${endpoint}`, errorInfo);
+      logger.error(`API error for ${fullEndpoint}`, errorInfo);
 
-      // Record failure in circuit breaker BEFORE retry (for each failed attempt)
-      // This ensures circuit breaker opens faster when service is down
       if (isRetryable) {
         this.circuitBreaker.recordFailure();
       }
 
-      // If retryable and not last attempt, retry
       if (isRetryable && !isLastAttempt) {
         const delay = calculateRetryDelay(retryCount);
-        // Log to file only to reduce stderr noise
         logger.info(`Retrying in ${Math.round(delay)}ms... (attempt ${retryCount + 2}/${this.maxRetries})`);
-        
         await this.sleep(delay);
-        return this.makeRequest(endpoint, method, data, retryCount + 1, false);
+        return this.makeRequest(endpoint, method, data, { apiType, retryCount: retryCount + 1, forceTokenRefresh: false });
       }
 
-      // If not retryable or last attempt, throw error with context
       const enhancedError = new Error(
-        `Jira API request failed after ${retryCount + 1} attempts: ${error.message}`
+        `API request failed after ${retryCount + 1} attempts: ${error.message}`
       );
       enhancedError.originalError = error;
-      enhancedError.endpoint = endpoint;
+      enhancedError.endpoint = fullEndpoint;
       enhancedError.method = method;
       enhancedError.status = error.response?.status;
       enhancedError.attempts = retryCount + 1;
@@ -179,6 +178,16 @@ class JiraService {
       throw enhancedError;
     }
   }
+
+  /**
+   * Make HTTP request to Agile API (for Sprint operations)
+   * Shorthand for makeRequest with apiType: 'agile'
+   */
+  async makeAgileRequest(endpoint, method = 'GET', data = null) {
+    return this.makeRequest(endpoint, method, data, { apiType: 'agile' });
+  }
+
+  // ==================== REST API v3 Methods ====================
 
   async getCurrentUser() {
     return await this.makeRequest('/myself');
@@ -190,9 +199,6 @@ class JiraService {
       maxResults,
       fields: fields ? fields.split(',') : ['summary', 'status', 'assignee', 'priority', 'duedate', 'created', 'updated', 'issuetype', 'project']
     };
-
-    // Use only /search/jql (the correct API endpoint)
-    // The /search endpoint has been removed by Atlassian
     return await this.makeRequest('/search/jql', 'POST', requestBody);
   }
 
@@ -211,6 +217,53 @@ class JiraService {
 
   async getProjects() {
     return await this.makeRequest('/project');
+  }
+
+  /**
+   * Get all sprints for a board
+   * @param {number} boardId - Board ID
+   * @param {string} state - Sprint state: 'active', 'future', 'closed', or comma-separated
+   */
+  async getBoardSprints(boardId, state = 'active,future') {
+    return await this.makeAgileRequest(`/board/${boardId}/sprint?state=${state}`);
+  }
+
+  /**
+   * Get active sprint for a board
+   * @param {number} boardId - Board ID
+   * @returns {object|null} Active sprint or null if none
+   */
+  async getActiveSprint(boardId) {
+    try {
+      const result = await this.makeAgileRequest(`/board/${boardId}/sprint?state=active`);
+      if (result.values && result.values.length > 0) {
+        return result.values[0];
+      }
+      return null;
+    } catch (error) {
+      logger.error(`Failed to get active sprint for board ${boardId}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Move issues to a sprint
+   * @param {number} sprintId - Sprint ID
+   * @param {string[]} issueKeys - Array of issue keys to move
+   */
+  async moveIssuesToSprint(sprintId, issueKeys) {
+    const data = {
+      issues: Array.isArray(issueKeys) ? issueKeys : [issueKeys]
+    };
+    return await this.makeAgileRequest(`/sprint/${sprintId}/issue`, 'POST', data);
+  }
+
+  /**
+   * Get sprint details
+   * @param {number} sprintId - Sprint ID
+   */
+  async getSprint(sprintId) {
+    return await this.makeAgileRequest(`/sprint/${sprintId}`);
   }
 
   buildJQL(filters) {

@@ -277,9 +277,9 @@ export function registerJiraTools(mcpServer, jiraService) {
     'create_task',
     {
       title: 'Create Task',
-      description: 'Create a new Jira task with optional subtasks',
+      description: `Create a new Jira task with optional subtasks and sprint assignment. Uses default project/board from config if not specified.${jiraService.defaultProject ? ` Default project: ${jiraService.defaultProject}.` : ''}${jiraService.defaultBoardId ? ` Default board: ${jiraService.defaultBoardId} (auto-sprint).` : ''}`,
       inputSchema: z.object({
-        project: z.string().describe('Project key (e.g., "URC", "PROJ")'),
+        project: z.string().optional().describe(`Project key (e.g., "URC")${jiraService.defaultProject ? `. Default: ${jiraService.defaultProject}` : ''}`),
         summary: z.string().describe('Task title/summary'),
         description: z.string().optional().describe('Task description'),
         issueType: z.string().default('Task').describe('Issue type'),
@@ -287,6 +287,9 @@ export function registerJiraTools(mcpServer, jiraService) {
         storyPoints: z.number().optional().describe('Story points'),
         startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
         dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)'),
+        // Sprint options
+        sprintId: z.number().optional().describe('Sprint ID to add task to (direct assignment)'),
+        boardId: z.number().optional().describe(`Board ID to auto-assign to active sprint${jiraService.defaultBoardId ? `. Default: ${jiraService.defaultBoardId}` : ''}`),
         subtasks: z.array(z.object({
           summary: z.string(),
           description: z.string().optional(),
@@ -300,15 +303,27 @@ export function registerJiraTools(mcpServer, jiraService) {
         task: z.object({
           key: z.string(),
           summary: z.string(),
-          url: z.string()
+          url: z.string(),
+          sprint: z.object({
+            id: z.number(),
+            name: z.string()
+          }).nullable()
         })
       })
     },
-    async ({ project, summary, description, issueType, priority, storyPoints, startDate, dueDate, subtasks }) => {
+    async ({ project, summary, description, issueType, priority, storyPoints, startDate, dueDate, sprintId, boardId, subtasks }) => {
       const user = await jiraService.getCurrentUser();
       
+      // Use defaults from config if not provided
+      const effectiveProject = project || jiraService.defaultProject;
+      const effectiveBoardId = boardId || jiraService.defaultBoardId;
+
+      if (!effectiveProject) {
+        throw new Error('Project is required. Either provide "project" parameter or set --default_project in MCP config.');
+      }
+
       const parentFields = {
-        project: { key: project },
+        project: { key: effectiveProject },
         summary: summary,
         issuetype: { name: issueType },
         priority: { name: priority },
@@ -330,13 +345,59 @@ export function registerJiraTools(mcpServer, jiraService) {
       if (startDate) parentFields.customfield_10015 = startDate;
       if (dueDate) parentFields.duedate = dueDate;
 
+      // Create the parent task first
       const parentTask = await jiraService.createIssue({ fields: parentFields });
       
+      // Handle Sprint assignment
+      let sprintInfo = null;
+      let targetSprintId = sprintId;
+
+      // If boardId provided (or default), get active sprint
+      if (!targetSprintId && effectiveBoardId) {
+        try {
+          const activeSprint = await jiraService.getActiveSprint(effectiveBoardId);
+          if (activeSprint) {
+            targetSprintId = activeSprint.id;
+            sprintInfo = {
+              id: activeSprint.id,
+              name: activeSprint.name,
+              state: activeSprint.state
+            };
+          }
+        } catch (error) {
+          console.error('Failed to get active sprint:', error.message);
+        }
+      }
+
+      // Move task to sprint if we have a sprint ID
+      if (targetSprintId) {
+        try {
+          await jiraService.moveIssuesToSprint(targetSprintId, [parentTask.key]);
+          
+          // If we don't have sprint info yet (direct sprintId provided), fetch it
+          if (!sprintInfo) {
+            try {
+              const sprint = await jiraService.getSprint(targetSprintId);
+              sprintInfo = {
+                id: sprint.id,
+                name: sprint.name,
+                state: sprint.state
+              };
+            } catch (e) {
+              sprintInfo = { id: targetSprintId, name: 'Unknown', state: 'unknown' };
+            }
+          }
+        } catch (error) {
+          console.error('Failed to move task to sprint:', error.message);
+        }
+      }
+
+      // Create subtasks
       const createdSubtasks = [];
       if (subtasks && subtasks.length > 0) {
         for (const subtask of subtasks) {
           const subtaskFields = {
-            project: { key: project },
+            project: { key: effectiveProject },
             summary: subtask.summary,
             issuetype: { name: 'Subtask' },
             parent: { key: parentTask.key },
@@ -376,6 +437,7 @@ export function registerJiraTools(mcpServer, jiraService) {
           key: parentTask.key,
           summary: summary,
           url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${parentTask.key}`,
+          sprint: sprintInfo,
           subtasks: createdSubtasks
         }
       };
@@ -925,6 +987,102 @@ export function registerJiraTools(mcpServer, jiraService) {
             ? Math.round((totalMonthlyHours / breakdown.length) * 100) / 100
             : 0
         }
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
+
+  // Tool 11: Get Board Sprints
+  mcpServer.registerTool(
+    'get_board_sprints',
+    {
+      title: 'Get Board Sprints',
+      description: 'Get all sprints for a board. Useful to find board ID and sprint IDs for task creation.',
+      inputSchema: z.object({
+        boardId: z.number().describe('Board ID (e.g., 9 for URC board from URL: /boards/9)'),
+        state: z.enum(['active', 'future', 'closed', 'all']).default('active')
+          .describe('Sprint state filter: active, future, closed, or all')
+      }),
+      outputSchema: z.object({
+        boardId: z.number(),
+        total: z.number(),
+        sprints: z.array(z.object({
+          id: z.number(),
+          name: z.string(),
+          state: z.string(),
+          startDate: z.string().nullable(),
+          endDate: z.string().nullable()
+        }))
+      })
+    },
+    async ({ boardId, state }) => {
+      const stateParam = state === 'all' ? 'active,future,closed' : state;
+      const result = await jiraService.getBoardSprints(boardId, stateParam);
+
+      const sprints = (result.values || []).map(sprint => ({
+        id: sprint.id,
+        name: sprint.name,
+        state: sprint.state,
+        goal: sprint.goal || null,
+        startDate: sprint.startDate ? moment(sprint.startDate).format('YYYY-MM-DD') : null,
+        endDate: sprint.endDate ? moment(sprint.endDate).format('YYYY-MM-DD') : null
+      }));
+
+      const output = {
+        boardId: boardId,
+        total: sprints.length,
+        activeSprint: sprints.find(s => s.state === 'active') || null,
+        sprints: sprints
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
+
+  // Tool 12: Move Task to Sprint
+  mcpServer.registerTool(
+    'move_to_sprint',
+    {
+      title: 'Move Task to Sprint',
+      description: 'Move one or more tasks to a specific sprint',
+      inputSchema: z.object({
+        sprintId: z.number().describe('Sprint ID to move tasks to'),
+        taskKeys: z.array(z.string()).describe('Array of task keys to move (e.g., ["URC-123", "URC-124"])')
+      }),
+      outputSchema: z.object({
+        success: z.boolean(),
+        sprintId: z.number(),
+        movedTasks: z.array(z.string())
+      })
+    },
+    async ({ sprintId, taskKeys }) => {
+      await jiraService.moveIssuesToSprint(sprintId, taskKeys);
+
+      // Get sprint info
+      let sprintInfo = null;
+      try {
+        const sprint = await jiraService.getSprint(sprintId);
+        sprintInfo = {
+          id: sprint.id,
+          name: sprint.name,
+          state: sprint.state
+        };
+      } catch (e) {
+        sprintInfo = { id: sprintId, name: 'Unknown', state: 'unknown' };
+      }
+
+      const output = {
+        success: true,
+        sprint: sprintInfo,
+        movedTasks: taskKeys,
+        message: `Successfully moved ${taskKeys.length} task(s) to sprint "${sprintInfo.name}"`
       };
 
       return {

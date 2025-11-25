@@ -9,7 +9,8 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jir
 
 ## Features
 
-- ✅ **10 Powerful Tools** - Complete task management with daily & monthly hours tracking
+- ✅ **12 Powerful Tools** - Complete task management with sprint support & hours tracking
+- ✅ **Sprint Integration** - Auto-assign tasks to active sprint via boardId
 - ✅ **OAuth Authentication** - Secure auto-refresh tokens
 - ✅ **Zero Configuration** - No database, CLI-based setup
 - ✅ **MCP Compatible** - Works with Claude, Cursor, VS Code
@@ -37,6 +38,10 @@ You need Jira OAuth credentials:
 - `client_secret` - OAuth client secret
 - `cloud_id` - Atlassian Cloud ID
 
+**Optional but recommended:**
+- `default_project` - Default project key (e.g., "URC") - no need to specify project every time
+- `default_board_id` - Default board ID for auto-sprint assignment (e.g., "9")
+
 **🚀 Easy way to get credentials:** Use our [OAuth Token Generator](https://github.com/dongitran/Jira-Oauth-Token-Generator) - it provides ready-to-use MCP config with all required credentials including `cloud_id`!
 
 Or manually: [How to get Jira OAuth credentials →](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/)
@@ -61,13 +66,17 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
         "--refresh_token", "YOUR_REFRESH_TOKEN",
         "--client_id", "YOUR_CLIENT_ID",
         "--client_secret", "YOUR_CLIENT_SECRET",
-        "--cloud_id", "YOUR_CLOUD_ID"
+        "--cloud_id", "YOUR_CLOUD_ID",
+        "--default_project", "YOUR_PROJECT_KEY",
+        "--default_board_id", "YOUR_BOARD_ID"
       ],
       "env": {}
     }
   }
 }
 ```
+
+**Note:** `default_project` and `default_board_id` are optional. When set, tasks will auto-assign to the active sprint without specifying project/board each time. Board ID can be found in URL: `/boards/9` → board_id = 9.
 
 ### For Cursor
 
@@ -165,7 +174,7 @@ Search tasks using JQL query or keyword.
 ```
 
 ### 4. `create_task`
-Create a new Jira task with optional subtasks.
+Create a new Jira task with optional subtasks and sprint assignment.
 
 **Parameters:**
 - `project`: Project key (required)
@@ -176,16 +185,30 @@ Create a new Jira task with optional subtasks.
 - `storyPoints`: Story points (optional)
 - `startDate`: Start date YYYY-MM-DD (optional)
 - `dueDate`: Due date YYYY-MM-DD (optional)
+- `sprintId`: Sprint ID for direct assignment (optional)
+- `boardId`: Board ID to auto-assign to active sprint (optional)
 - `subtasks`: Array of subtasks (optional)
 
-**Example:**
+**Example - Auto-assign to active sprint:**
 ```json
 {
   "project": "URC",
   "summary": "Implement new feature",
   "priority": "High",
   "storyPoints": 5,
-  "dueDate": "2025-01-20",
+  "boardId": 9,
+  "dueDate": "2025-01-20"
+}
+```
+
+**Example - With subtasks:**
+```json
+{
+  "project": "URC",
+  "summary": "Implement new feature",
+  "priority": "High",
+  "storyPoints": 5,
+  "boardId": 9,
   "subtasks": [
     {
       "summary": "Design API",
@@ -194,6 +217,11 @@ Create a new Jira task with optional subtasks.
   ]
 }
 ```
+
+**Sprint Assignment Options:**
+- Use `boardId` to auto-assign to the active sprint of that board
+- Use `sprintId` for direct sprint assignment
+- Board ID can be found in URL: `https://urbox.atlassian.net/jira/software/projects/URC/boards/9` → boardId = 9
 
 ### 5. `update_task_dates`
 Update start date and/or due date of a task.
@@ -283,6 +311,40 @@ Calculate total monthly hours based on Story Points and working days.
 - Excludes weekends and Vietnamese holidays
 - Handles tasks spanning multiple months
 - Provides detailed breakdown per task
+
+### 11. `get_board_sprints`
+Get all sprints for a board. Useful to find board ID and sprint IDs.
+
+**Parameters:**
+- `boardId`: Board ID (required) - found in URL: `/boards/9` → boardId = 9
+- `state`: Sprint state filter: `active`, `future`, `closed`, or `all` (default: `active`)
+
+**Example:**
+```json
+{
+  "boardId": 9,
+  "state": "active"
+}
+```
+
+**Response includes:**
+- List of sprints with ID, name, state, start/end dates
+- Active sprint highlighted for easy reference
+
+### 12. `move_to_sprint`
+Move one or more existing tasks to a specific sprint.
+
+**Parameters:**
+- `sprintId`: Sprint ID to move tasks to (required)
+- `taskKeys`: Array of task keys to move (required)
+
+**Example:**
+```json
+{
+  "sprintId": 123,
+  "taskKeys": ["URC-100", "URC-101", "URC-102"]
+}
+```
 
 ## Daily & Monthly Hours Calculation
 
