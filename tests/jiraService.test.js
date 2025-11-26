@@ -430,3 +430,83 @@ describe('JiraService', () => {
     });
   });
 });
+
+describe('initialize', () => {
+  it('should initialize service with token manager values', async () => {
+    vi.resetModules();
+      
+    vi.doMock('../config/tokenManager.js', () => ({
+      default: {
+        getAccessToken: vi.fn(() => 'init-token'),
+        getCloudId: vi.fn(() => 'init-cloud-id'),
+        validateAndRefreshToken: vi.fn()
+      }
+    }));
+
+    const { default: service } = await import('../services/jiraService.js');
+    await service.initialize();
+
+    expect(service.accessToken).toBe('init-token');
+    expect(service.cloudId).toBe('init-cloud-id');
+    expect(service.baseURL).toBe('https://api.atlassian.com/ex/jira/init-cloud-id');
+  });
+});
+
+describe('buildJQL additional filters', () => {
+  it('should build JQL with issueType filter', async () => {
+    vi.resetModules();
+    const { default: service } = await import('../services/jiraService.js');
+    const jql = service.buildJQL({ issueType: 'Bug' });
+    expect(jql).toBe('issuetype = "Bug"');
+  });
+
+  it('should build JQL with priority filter', async () => {
+    vi.resetModules();
+    const { default: service } = await import('../services/jiraService.js');
+    const jql = service.buildJQL({ priority: 'High' });
+    expect(jql).toBe('priority = "High"');
+  });
+
+  it('should build JQL with all filters combined', async () => {
+    vi.resetModules();
+    const { default: service } = await import('../services/jiraService.js');
+    const jql = service.buildJQL({
+      assignee: 'john',
+      status: 'Open',
+      project: 'TEST',
+      issueType: 'Task',
+      priority: 'Medium',
+      text: 'search term'
+    });
+      
+    expect(jql).toContain('assignee = "john"');
+    expect(jql).toContain('status = "Open"');
+    expect(jql).toContain('project = "TEST"');
+    expect(jql).toContain('issuetype = "Task"');
+    expect(jql).toContain('priority = "Medium"');
+    expect(jql).toContain('text ~ "search term"');
+  });
+});
+
+describe('makeRequest 401 with failed token refresh', () => {
+  it('should handle token refresh failure after 401', async () => {
+    vi.resetModules();
+      
+    vi.doMock('../config/tokenManager.js', () => ({
+      default: {
+        getAccessToken: vi.fn(() => 'token'),
+        getCloudId: vi.fn(() => 'cloud-id'),
+        validateAndRefreshToken: vi.fn().mockRejectedValue(new Error('Refresh failed'))
+      }
+    }));
+
+    const { default: service } = await import('../services/jiraService.js');
+    service.baseURL = 'https://api.atlassian.com/ex/jira/cloud-id';
+    service.accessToken = 'token';
+    service.circuitBreaker.reset();
+
+    axios.mockRejectedValueOnce({ response: { status: 401 }, message: 'Unauthorized' });
+
+    await expect(service.makeRequest('/myself')).rejects.toThrow();
+  });
+});
