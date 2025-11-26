@@ -17,7 +17,6 @@ import axios from 'axios';
 // We need to create a fresh instance for testing
 // First, let's test the TokenManager class directly
 describe('TokenManager', () => {
-  let TokenManager;
   let tokenManager;
   const testCacheDir = path.join(os.tmpdir(), '.jira-mcp-test-' + Date.now());
 
@@ -50,7 +49,7 @@ describe('TokenManager', () => {
       if (fs.existsSync(testCacheDir)) {
         fs.rmSync(testCacheDir, { recursive: true });
       }
-    } catch (e) {
+    } catch (_e) {
       // Ignore cleanup errors
     }
   });

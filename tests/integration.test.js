@@ -77,7 +77,7 @@ describe('Integration Tests', () => {
       // First request - will retry and fail
       try {
         await jiraService.makeRequest('/test1');
-      } catch (e) {
+      } catch (_e) {
         // Expected to fail
       }
 

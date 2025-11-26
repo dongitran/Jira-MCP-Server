@@ -43,7 +43,9 @@ describe('TokenManager Advanced Tests', () => {
       if (fs.existsSync(testCacheDir)) {
         fs.rmSync(testCacheDir, { recursive: true });
       }
-    } catch (e) {}
+    } catch (_e) {
+      // Ignore cleanup errors
+    }
   });
 
   describe('loadCachedTokens', () => {

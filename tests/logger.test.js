@@ -28,7 +28,7 @@ describe('Logger', () => {
       if (fs.existsSync(testLogFile + '.old')) {
         fs.unlinkSync(testLogFile + '.old');
       }
-    } catch (e) {
+    } catch (_e) {
       // Ignore cleanup errors
     }
   });
