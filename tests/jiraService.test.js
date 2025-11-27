@@ -373,6 +373,55 @@ describe('JiraService', () => {
         }));
       });
     });
+
+    describe('getTransitions', () => {
+      it('should call /issue/{key}/transitions endpoint', async () => {
+        await jiraService.getTransitions('TEST-123');
+
+        expect(axios).toHaveBeenCalledWith(expect.objectContaining({
+          method: 'GET',
+          url: expect.stringContaining('/issue/TEST-123/transitions')
+        }));
+      });
+    });
+
+    describe('doTransition', () => {
+      it('should call POST /issue/{key}/transitions', async () => {
+        await jiraService.doTransition('TEST-123', '21');
+
+        expect(axios).toHaveBeenCalledWith(expect.objectContaining({
+          method: 'POST',
+          url: expect.stringContaining('/issue/TEST-123/transitions'),
+          data: { transition: { id: '21' } }
+        }));
+      });
+
+      it('should include comment when provided', async () => {
+        await jiraService.doTransition('TEST-123', '21', 'Starting work');
+
+        expect(axios).toHaveBeenCalledWith(expect.objectContaining({
+          method: 'POST',
+          url: expect.stringContaining('/issue/TEST-123/transitions'),
+          data: {
+            transition: { id: '21' },
+            update: {
+              comment: [{
+                add: {
+                  body: {
+                    type: 'doc',
+                    version: 1,
+                    content: [{
+                      type: 'paragraph',
+                      content: [{ type: 'text', text: 'Starting work' }]
+                    }]
+                  }
+                }
+              }]
+            }
+          }
+        }));
+      });
+    });
   });
 
   describe('buildJQL', () => {

@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0-alpha.1] - 2025-11-28
+
+### Added
+- **Status Transitions in `update_task`**: Now supports changing task status using Jira workflow transitions
+  - Use `status` parameter to transition to target status (e.g., "In Progress", "Done")
+  - Optional `comment` parameter to add comment during transition
+  - Case-insensitive status matching
+  - Clear error messages showing available transitions when target status is not reachable
+- **New jiraService methods**: `getTransitions()` and `doTransition()` for workflow operations
+
+### Example
+```javascript
+// Change status only
+update_task({ taskKey: "URC-123", status: "In Progress" })
+
+// Change status with comment
+update_task({ taskKey: "URC-123", status: "Done", comment: "Task completed" })
+
+// Update status and other fields together
+update_task({ taskKey: "URC-123", status: "In Progress", storyPoints: 5 })
+```
+
+---
+
 ## [1.1.0] - 2025-11-27
 
 ### 🎉 First Stable Release of v1.1.x

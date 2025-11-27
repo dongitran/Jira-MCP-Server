@@ -13,7 +13,9 @@ const mockJiraService = {
   getBoardSprints: vi.fn(),
   getActiveSprint: vi.fn(),
   moveIssuesToSprint: vi.fn(),
-  getSprint: vi.fn()
+  getSprint: vi.fn(),
+  getTransitions: vi.fn(),
+  doTransition: vi.fn()
 };
 
 // Mock MCP server
@@ -439,6 +441,118 @@ describe('jiraTools', () => {
       expect(result.structuredContent.updatedFields).toContain('title');
       expect(result.structuredContent.updatedFields).toContain('storyPoints');
       expect(result.structuredContent.updatedFields).toContain('dueDate');
+    });
+
+    it('should transition status using workflow transitions', async () => {
+      mockJiraService.getTransitions.mockResolvedValue({
+        transitions: [
+          { id: '21', name: 'Start Progress', to: { name: 'In Progress' } },
+          { id: '31', name: 'Done', to: { name: 'Done' } }
+        ]
+      });
+      mockJiraService.getIssue.mockResolvedValue({
+        fields: { status: { name: 'To Do' } }
+      });
+      mockJiraService.doTransition.mockResolvedValue({});
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        status: 'In Progress'
+      });
+
+      expect(mockJiraService.getTransitions).toHaveBeenCalledWith('TEST-1');
+      expect(mockJiraService.doTransition).toHaveBeenCalledWith('TEST-1', '21', undefined);
+      expect(result.structuredContent.success).toBe(true);
+      expect(result.structuredContent.updatedFields).toContain('status');
+      expect(result.structuredContent.statusTransition).toEqual({
+        from: 'To Do',
+        to: 'In Progress'
+      });
+    });
+
+    it('should transition status with comment', async () => {
+      mockJiraService.getTransitions.mockResolvedValue({
+        transitions: [
+          { id: '31', name: 'Done', to: { name: 'Done' } }
+        ]
+      });
+      mockJiraService.getIssue.mockResolvedValue({
+        fields: { status: { name: 'In Progress' } }
+      });
+      mockJiraService.doTransition.mockResolvedValue({});
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      await handler({
+        taskKey: 'TEST-1',
+        status: 'Done',
+        comment: 'Task completed'
+      });
+
+      expect(mockJiraService.doTransition).toHaveBeenCalledWith('TEST-1', '31', 'Task completed');
+    });
+
+    it('should throw error when transition not available', async () => {
+      mockJiraService.getTransitions.mockResolvedValue({
+        transitions: [
+          { id: '21', name: 'Start Progress', to: { name: 'In Progress' } }
+        ]
+      });
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      
+      await expect(handler({
+        taskKey: 'TEST-1',
+        status: 'Done'
+      })).rejects.toThrow('Cannot transition to "Done". Available transitions: In Progress');
+    });
+
+    it('should update status and other fields together', async () => {
+      mockJiraService.getTransitions.mockResolvedValue({
+        transitions: [
+          { id: '21', name: 'Start Progress', to: { name: 'In Progress' } }
+        ]
+      });
+      mockJiraService.getIssue.mockResolvedValue({
+        fields: { status: { name: 'To Do' } }
+      });
+      mockJiraService.doTransition.mockResolvedValue({});
+      mockJiraService.updateIssue.mockResolvedValue({});
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        status: 'In Progress',
+        storyPoints: 5
+      });
+
+      expect(mockJiraService.doTransition).toHaveBeenCalled();
+      expect(mockJiraService.updateIssue).toHaveBeenCalledWith('TEST-1', {
+        fields: { customfield_10016: 5 }
+      });
+      expect(result.structuredContent.updatedFields).toContain('status');
+      expect(result.structuredContent.updatedFields).toContain('storyPoints');
+    });
+
+    it('should handle case-insensitive status matching', async () => {
+      mockJiraService.getTransitions.mockResolvedValue({
+        transitions: [
+          { id: '21', name: 'Start Progress', to: { name: 'In Progress' } }
+        ]
+      });
+      mockJiraService.getIssue.mockResolvedValue({
+        fields: { status: { name: 'To Do' } }
+      });
+      mockJiraService.doTransition.mockResolvedValue({});
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        status: 'in progress'  // lowercase
+      });
+
+      expect(mockJiraService.doTransition).toHaveBeenCalledWith('TEST-1', '21', undefined);
+      expect(result.structuredContent.success).toBe(true);
     });
   });
 

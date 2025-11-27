@@ -239,25 +239,46 @@ Update story points of a task.
 - `storyPoints`: Story points value (required)
 
 ### 7. `update_task`
-Update task fields including title, description, dates, and story points.
+Update task fields including status, title, description, dates, and story points. Status change uses workflow transitions.
 
 **Parameters:**
 - `taskKey`: Task key (required)
+- `status`: Target status using workflow transitions (optional, e.g., "In Progress", "Done")
 - `title`: Task title/summary (optional)
 - `description`: Task description (optional)
 - `startDate`: Start date YYYY-MM-DD (optional)
 - `dueDate`: Due date YYYY-MM-DD (optional)
 - `storyPoints`: Story points value (optional)
+- `comment`: Comment to add when changing status (optional)
 
-**Example:**
+**Example - Change status:**
 ```json
 {
   "taskKey": "URC-123",
-  "title": "Updated task title",
-  "description": "Updated description",
-  "storyPoints": 8
+  "status": "In Progress"
 }
 ```
+
+**Example - Change status with comment:**
+```json
+{
+  "taskKey": "URC-123",
+  "status": "Done",
+  "comment": "Task completed"
+}
+```
+
+**Example - Update multiple fields:**
+```json
+{
+  "taskKey": "URC-123",
+  "status": "In Progress",
+  "storyPoints": 8,
+  "dueDate": "2025-12-01"
+}
+```
+
+**Note:** Status transitions follow Jira workflow rules. If a transition is not available, the error message will show available transitions.
 
 ### 8. `get_task_details`
 Get detailed information about a specific task including all subtasks.

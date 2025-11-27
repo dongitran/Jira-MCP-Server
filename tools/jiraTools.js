@@ -537,14 +537,16 @@ export function registerJiraTools(mcpServer, jiraService) {
     'update_task',
     {
       title: 'Update Task',
-      description: 'Update task fields including title, description, dates, and story points. Only provided fields will be updated.',
+      description: 'Update task fields including status, title, description, dates, and story points. Status change uses workflow transitions. Only provided fields will be updated.',
       inputSchema: z.object({
         taskKey: z.string().describe('Task key (e.g., "URC-123")'),
+        status: z.string().optional().describe('Target status (e.g., "In Progress", "Done"). Uses workflow transitions.'),
         title: z.string().optional().describe('Task title/summary'),
         description: z.string().optional().describe('Task description'),
         startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
         dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)'),
-        storyPoints: z.number().optional().describe('Story points value')
+        storyPoints: z.number().optional().describe('Story points value'),
+        comment: z.string().optional().describe('Comment to add when changing status')
       }),
       outputSchema: z.object({
         success: z.boolean(),
@@ -552,9 +554,41 @@ export function registerJiraTools(mcpServer, jiraService) {
         updatedFields: z.array(z.string())
       })
     },
-    async ({ taskKey, title, description, startDate, dueDate, storyPoints }) => {
-      const updateFields = {};
+    async ({ taskKey, status, title, description, startDate, dueDate, storyPoints, comment }) => {
       const updatedFieldsList = [];
+      let previousStatus = null;
+      let newStatus = null;
+
+      // Handle status transition FIRST (separate API)
+      if (status) {
+        // Get available transitions
+        const transitionsResult = await jiraService.getTransitions(taskKey);
+        const transitions = transitionsResult.transitions || [];
+        
+        // Find transition matching target status (case-insensitive)
+        const targetTransition = transitions.find(t => 
+          t.to.name.toLowerCase() === status.toLowerCase()
+        );
+        
+        if (!targetTransition) {
+          const availableStatuses = transitions.map(t => t.to.name);
+          throw new Error(
+            `Cannot transition to "${status}". Available transitions: ${availableStatuses.join(', ')}`
+          );
+        }
+        
+        // Get current status before transition
+        const currentIssue = await jiraService.getIssue(taskKey, 'status');
+        previousStatus = currentIssue.fields.status.name;
+        
+        // Perform the transition
+        await jiraService.doTransition(taskKey, targetTransition.id, comment);
+        newStatus = targetTransition.to.name;
+        updatedFieldsList.push('status');
+      }
+
+      // Handle other field updates
+      const updateFields = {};
 
       // Update title (summary)
       if (title) {
@@ -593,13 +627,16 @@ export function registerJiraTools(mcpServer, jiraService) {
         updatedFieldsList.push('storyPoints');
       }
 
-      // Perform the update
-      await jiraService.updateIssue(taskKey, { fields: updateFields });
+      // Perform field updates if any
+      if (Object.keys(updateFields).length > 0) {
+        await jiraService.updateIssue(taskKey, { fields: updateFields });
+      }
 
       const output = {
         success: true,
         taskKey: taskKey,
         updatedFields: updatedFieldsList,
+        statusTransition: status ? { from: previousStatus, to: newStatus } : null,
         url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${taskKey}`
       };
 

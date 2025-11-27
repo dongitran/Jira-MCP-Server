@@ -266,6 +266,46 @@ class JiraService {
     return await this.makeAgileRequest(`/sprint/${sprintId}`);
   }
 
+  /**
+   * Get available transitions for an issue
+   * @param {string} issueKey - Issue key (e.g., "URC-123")
+   * @returns {object} Transitions data with available transitions
+   */
+  async getTransitions(issueKey) {
+    return await this.makeRequest(`/issue/${issueKey}/transitions`);
+  }
+
+  /**
+   * Perform a transition on an issue (change status)
+   * @param {string} issueKey - Issue key (e.g., "URC-123")
+   * @param {string} transitionId - Transition ID
+   * @param {string} comment - Optional comment to add during transition
+   */
+  async doTransition(issueKey, transitionId, comment = null) {
+    const data = {
+      transition: { id: transitionId }
+    };
+    
+    if (comment) {
+      data.update = {
+        comment: [{
+          add: {
+            body: {
+              type: 'doc',
+              version: 1,
+              content: [{
+                type: 'paragraph',
+                content: [{ type: 'text', text: comment }]
+              }]
+            }
+          }
+        }]
+      };
+    }
+    
+    return await this.makeRequest(`/issue/${issueKey}/transitions`, 'POST', data);
+  }
+
   buildJQL(filters) {
     const conditions = [];
 

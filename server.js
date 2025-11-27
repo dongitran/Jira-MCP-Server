@@ -59,7 +59,7 @@ if (jiraService.defaultBoardId) {
   console.error(`📋 Default Board ID: ${jiraService.defaultBoardId} (auto-assign to active sprint)`);
 }
 
-const SERVER_VERSION = '1.1.0';
+const SERVER_VERSION = '1.2.0-alpha.1';
 
 // Main async function
 async function main() {
