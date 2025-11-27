@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2025-11-27
+
+### 🎉 First Stable Release of v1.1.x
+
+This release includes all features from alpha versions, thoroughly tested and production-ready.
+
+### Highlights
+- **14 Powerful Tools** for complete Jira task management
+- **Sprint Integration** with auto-assign to active sprint
+- **Team Workload Tracking** for sprint planning and daily standups
+- **Monthly Hours Calculation** with Vietnamese holidays support
+- **Robust Error Handling** with retry mechanism and circuit breaker
+- **Token Persistence** with auto-refresh
+
+### Tools Available
+1. `get_my_tasks` - Get tasks assigned to current user
+2. `get_tasks_by_date` - Get tasks active on a specific date
+3. `search_tasks` - Search tasks using JQL or keyword
+4. `create_task` - Create task with subtasks and sprint assignment
+5. `update_task_dates` - Update start/due dates
+6. `update_story_points` - Update story points
+7. `update_task` - Update multiple fields at once
+8. `get_task_details` - Get detailed task info with subtasks
+9. `create_subtask` - Create subtask for existing task
+10. `get_monthly_hours` - Calculate monthly hours from story points
+11. `get_board_sprints` - Get all sprints for a board
+12. `move_to_sprint` - Move tasks to a sprint
+13. `get_sprint_tasks` - Get all tasks in sprint (all team members)
+14. `get_sprint_daily_tasks` - Get In Progress tasks for daily standup
+
+---
+
 ## [1.1.0-alpha.6] - 2025-11-26
 
 ### Changed
