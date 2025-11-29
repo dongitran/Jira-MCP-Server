@@ -592,46 +592,106 @@ describe('jiraTools', () => {
       expect(result.structuredContent.subtasks).toHaveLength(0);
     });
 
-    it('should get task details with subtasks', async () => {
-      mockJiraService.getIssue
-        .mockResolvedValueOnce({
-          key: 'TEST-1',
-          fields: {
-            summary: 'Parent Task',
-            description: null,
-            status: { name: 'In Progress' },
-            priority: { name: 'High' },
-            assignee: { displayName: 'John Doe' },
-            issuetype: { name: 'Task', subtask: false },
-            customfield_10016: 10,
-            customfield_10015: null,
-            duedate: null,
-            created: '2025-01-01T10:00:00.000Z',
-            subtasks: [{ key: 'TEST-2' }]
+    it('should get task details with subtasks using batch query', async () => {
+      // Parent task
+      mockJiraService.getIssue.mockResolvedValue({
+        key: 'TEST-1',
+        fields: {
+          summary: 'Parent Task',
+          description: null,
+          status: { name: 'In Progress' },
+          priority: { name: 'High' },
+          assignee: { displayName: 'John Doe' },
+          issuetype: { name: 'Task', subtask: false },
+          customfield_10016: 10,
+          customfield_10015: null,
+          duedate: null,
+          created: '2025-01-01T10:00:00.000Z',
+          subtasks: [{ key: 'TEST-2' }, { key: 'TEST-3' }]
+        }
+      });
+      
+      // Subtasks fetched via batch JQL query (fixes N+1)
+      mockJiraService.searchIssues.mockResolvedValue({
+        issues: [
+          {
+            key: 'TEST-2',
+            fields: {
+              summary: 'Subtask 1',
+              description: null,
+              status: { name: 'To Do' },
+              priority: { name: 'Medium' },
+              assignee: null,
+              issuetype: { name: 'Subtask', subtask: true },
+              customfield_10016: 3,
+              customfield_10015: null,
+              duedate: null,
+              created: '2025-01-02T10:00:00.000Z'
+            }
+          },
+          {
+            key: 'TEST-3',
+            fields: {
+              summary: 'Subtask 2',
+              description: null,
+              status: { name: 'In Progress' },
+              priority: { name: 'High' },
+              assignee: { displayName: 'Jane Doe' },
+              issuetype: { name: 'Subtask', subtask: true },
+              customfield_10016: 5,
+              customfield_10015: '2025-01-05',
+              duedate: '2025-01-15',
+              created: '2025-01-03T10:00:00.000Z'
+            }
           }
-        })
-        .mockResolvedValueOnce({
-          key: 'TEST-2',
-          fields: {
-            summary: 'Subtask 1',
-            description: null,
-            status: { name: 'To Do' },
-            priority: { name: 'Medium' },
-            assignee: null,
-            issuetype: { name: 'Subtask', subtask: true },
-            customfield_10016: 3,
-            customfield_10015: null,
-            duedate: null,
-            created: '2025-01-02T10:00:00.000Z'
-          }
-        });
+        ]
+      });
 
       const handler = mockMcpServer.registeredTools['get_task_details'].handler;
       const result = await handler({ taskKey: 'TEST-1' });
 
+      // Verify batch query was used instead of N individual calls
+      expect(mockJiraService.getIssue).toHaveBeenCalledTimes(1); // Only parent task
+      expect(mockJiraService.searchIssues).toHaveBeenCalledWith(
+        'key IN (TEST-2,TEST-3)',
+        'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype'
+      );
+      
       expect(result.structuredContent.hasSubtasks).toBe(true);
-      expect(result.structuredContent.subtasksCount).toBe(1);
+      expect(result.structuredContent.subtasksCount).toBe(2);
       expect(result.structuredContent.subtasks[0].key).toBe('TEST-2');
+      expect(result.structuredContent.subtasks[1].key).toBe('TEST-3');
+      expect(result.structuredContent.subtasks[1].assignee).toBe('Jane Doe');
+    });
+
+    it('should handle subtask fetch error gracefully', async () => {
+      mockJiraService.getIssue.mockResolvedValue({
+        key: 'TEST-1',
+        fields: {
+          summary: 'Parent Task',
+          description: null,
+          status: { name: 'In Progress' },
+          priority: { name: 'High' },
+          assignee: { displayName: 'John Doe' },
+          issuetype: { name: 'Task', subtask: false },
+          customfield_10016: 10,
+          customfield_10015: null,
+          duedate: null,
+          created: '2025-01-01T10:00:00.000Z',
+          subtasks: [{ key: 'TEST-2' }]
+        }
+      });
+      
+      // Simulate error fetching subtasks
+      mockJiraService.searchIssues.mockRejectedValue(new Error('API Error'));
+
+      const handler = mockMcpServer.registeredTools['get_task_details'].handler;
+      const result = await handler({ taskKey: 'TEST-1' });
+
+      // Should still return parent task with empty subtasks
+      expect(result.structuredContent.key).toBe('TEST-1');
+      expect(result.structuredContent.hasSubtasks).toBe(true);
+      expect(result.structuredContent.subtasks).toHaveLength(0);
     });
   });
 

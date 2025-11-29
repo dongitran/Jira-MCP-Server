@@ -728,31 +728,33 @@ export function registerJiraTools(mcpServer, jiraService) {
         'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype,subtasks'
       );
 
-      // Fetch detailed information for each subtask if they exist
-      const subtasksDetails = [];
+      // Batch fetch subtasks using JQL (fixes N+1 query problem)
+      // Instead of N API calls (one per subtask), we make 1 API call for all subtasks
+      let subtasksDetails = [];
       if (issue.fields.subtasks && issue.fields.subtasks.length > 0) {
-        for (const subtask of issue.fields.subtasks) {
-          try {
-            const subtaskDetail = await jiraService.getIssue(
-              subtask.key,
-              'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype'
-            );
-            subtasksDetails.push({
-              key: subtaskDetail.key,
-              summary: subtaskDetail.fields.summary,
-              description: subtaskDetail.fields.description?.content?.[0]?.content?.[0]?.text || null,
-              status: subtaskDetail.fields.status.name,
-              priority: subtaskDetail.fields.priority ? subtaskDetail.fields.priority.name : 'None',
-              assignee: subtaskDetail.fields.assignee ? subtaskDetail.fields.assignee.displayName : 'Unassigned',
-              storyPoints: subtaskDetail.fields.customfield_10016 || 0,
-              startDate: subtaskDetail.fields.customfield_10015 || null,
-              dueDate: subtaskDetail.fields.duedate || null,
-              created: subtaskDetail.fields.created,
-              url: jiraService.getBrowseUrl(subtaskDetail.key)
-            });
-          } catch (error) {
-            console.error(`Failed to fetch subtask ${subtask.key}:`, error.message);
-          }
+        try {
+          const subtaskKeys = issue.fields.subtasks.map(s => s.key);
+          const jql = `key IN (${subtaskKeys.join(',')})`;
+          const subtasksResult = await jiraService.searchIssues(
+            jql,
+            'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype'
+          );
+          
+          subtasksDetails = subtasksResult.issues.map(subtask => ({
+            key: subtask.key,
+            summary: subtask.fields.summary,
+            description: subtask.fields.description?.content?.[0]?.content?.[0]?.text || null,
+            status: subtask.fields.status.name,
+            priority: subtask.fields.priority ? subtask.fields.priority.name : 'None',
+            assignee: subtask.fields.assignee ? subtask.fields.assignee.displayName : 'Unassigned',
+            storyPoints: subtask.fields.customfield_10016 || 0,
+            startDate: subtask.fields.customfield_10015 || null,
+            dueDate: subtask.fields.duedate || null,
+            created: subtask.fields.created,
+            url: jiraService.getBrowseUrl(subtask.key)
+          }));
+        } catch (error) {
+          console.error('Failed to fetch subtasks:', error.message);
         }
       }
 

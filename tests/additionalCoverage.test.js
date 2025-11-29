@@ -285,24 +285,26 @@ describe('Additional Coverage Tests', () => {
     });
 
     it('should handle subtask fetch failure gracefully', async () => {
-      mockJiraService.getIssue
-        .mockResolvedValueOnce({
-          key: 'TEST-1',
-          fields: {
-            summary: 'Parent Task',
-            description: null,
-            status: { name: 'In Progress' },
-            priority: { name: 'High' },
-            assignee: { displayName: 'John' },
-            issuetype: { name: 'Task', subtask: false },
-            customfield_10016: 10,
-            customfield_10015: null,
-            duedate: null,
-            created: '2025-01-01T10:00:00.000Z',
-            subtasks: [{ key: 'TEST-2' }]
-          }
-        })
-        .mockRejectedValueOnce(new Error('Subtask not found'));
+      // Parent task
+      mockJiraService.getIssue.mockResolvedValue({
+        key: 'TEST-1',
+        fields: {
+          summary: 'Parent Task',
+          description: null,
+          status: { name: 'In Progress' },
+          priority: { name: 'High' },
+          assignee: { displayName: 'John' },
+          issuetype: { name: 'Task', subtask: false },
+          customfield_10016: 10,
+          customfield_10015: null,
+          duedate: null,
+          created: '2025-01-01T10:00:00.000Z',
+          subtasks: [{ key: 'TEST-2' }]
+        }
+      });
+      
+      // Batch subtask fetch fails
+      mockJiraService.searchIssues.mockRejectedValue(new Error('Subtask not found'));
 
       const handler = mockMcpServer.registeredTools['get_task_details'].handler;
       const result = await handler({ taskKey: 'TEST-1' });

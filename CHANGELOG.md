@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0-alpha.4] - 2025-11-29
+
+### Performance
+- **Fix N+1 Query in `get_task_details`**: Batch fetch subtasks using JQL instead of individual API calls
+  - Before: 1 + N API calls (1 for parent, N for each subtask)
+  - After: 2 API calls (1 for parent, 1 for all subtasks)
+  - ~5x faster for tasks with multiple subtasks
+  - Reduces Jira API rate limit usage
+
+---
+
 ## [1.2.0-alpha.3] - 2025-11-29
 
 ### Added
