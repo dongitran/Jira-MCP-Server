@@ -5,56 +5,73 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for Jir
 [![npm version](https://img.shields.io/npm/v/@urcard/jira-mcp-server.svg)](https://www.npmjs.com/package/@urcard/jira-mcp-server)
 [![npm downloads](https://img.shields.io/npm/dm/@urcard/jira-mcp-server.svg)](https://www.npmjs.com/package/@urcard/jira-mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
+[![Tests](https://img.shields.io/badge/tests-289%20passed-brightgreen)](https://github.com/dongitran/Jira-MCP-Server)
 
-## Features
+## ✨ Features
 
-- ✅ **14 Powerful Tools** - Complete task management with sprint support & team workload tracking
-- ✅ **Sprint Integration** - Auto-assign tasks to active sprint via boardId
-- ✅ **OAuth Authentication** - Secure auto-refresh tokens
-- ✅ **Zero Configuration** - No database, CLI-based setup
-- ✅ **MCP Compatible** - Works with Claude, Cursor, VS Code
+| Feature | Description |
+|---------|-------------|
+| 🛠️ **16 Tools** | Tasks, sprints, comments, workload tracking |
+| 🔄 **Sprint Integration** | Auto-assign to active sprint |
+| 💬 **Comments** | Add & retrieve task comments |
+| 👤 **Assignee** | Update by email or account ID |
+| 🔐 **OAuth** | Auto-refresh tokens |
+| 🧪 **Tested** | 289 tests, 100% pass rate |
 
-## Installation
+## 🚀 Quick Start
 
-**Global install (recommended):**
+**1. Install:**
 ```bash
 npm install -g @urcard/jira-mcp-server
 ```
 
-**Or clone from source:**
-```bash
-git clone https://github.com/dongitran/Jira-MCP-Server.git
-cd Jira-MCP-Server
-npm install
-```
+**2. Get credentials:** Use [OAuth Token Generator](https://github.com/dongitran/Jira-Oauth-Token-Generator) (easiest) or [manual setup](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/)
 
-## Prerequisites
+**3. Configure your IDE** (see [Configuration](#configuration))
 
-You need Jira OAuth credentials:
-- `access_token` - OAuth access token
-- `refresh_token` - OAuth refresh token
-- `client_id` - OAuth client ID
-- `client_secret` - OAuth client secret
-- `cloud_id` - Atlassian Cloud ID
+## 📋 Tools Overview
 
-**Optional but recommended:**
-- `default_project` - Default project key (e.g., "URC") - no need to specify project every time
-- `default_board_id` - Default board ID for auto-sprint assignment (e.g., "9")
+| Tool | Description |
+|------|-------------|
+| `get_my_tasks` | Get your tasks with filters (todo, in-progress, overdue, etc.) |
+| `get_tasks_by_date` | Tasks active on a date with daily hours |
+| `search_tasks` | Search by JQL or keyword |
+| `create_task` | Create task with subtasks & sprint assignment |
+| `update_task` | Update status, assignee, dates, story points |
+| `update_task_dates` | Update start/due dates |
+| `update_story_points` | Update story points |
+| `get_task_details` | Get task info with subtasks |
+| `create_subtask` | Create subtask for parent |
+| `get_monthly_hours` | Calculate monthly hours from story points |
+| `get_board_sprints` | List sprints for a board |
+| `move_to_sprint` | Move tasks to sprint |
+| `get_sprint_tasks` | All sprint tasks (team view) |
+| `get_sprint_daily_tasks` | In Progress tasks (daily standup) |
+| `add_comment` | Add comment to task |
+| `get_comments` | Get task comments |
 
-**🚀 Easy way to get credentials:** Use our [OAuth Token Generator](https://github.com/dongitran/Jira-Oauth-Token-Generator) - it provides ready-to-use MCP config with all required credentials including `cloud_id`!
+## ⚙️ Configuration
 
-Or manually: [How to get Jira OAuth credentials →](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/)
+### Required Credentials
 
-## Configuration
+| Credential | Description |
+|------------|-------------|
+| `access_token` | OAuth access token |
+| `refresh_token` | OAuth refresh token |
+| `client_id` | OAuth client ID |
+| `client_secret` | OAuth client secret |
+| `cloud_id` | Atlassian Cloud ID |
 
-### Quick Setup (Recommended)
+**Optional:**
+- `default_project` - Default project key (e.g., "URC")
+- `default_board_id` - Board ID for auto-sprint (find in URL: `/boards/9`)
 
-Use our [OAuth Token Generator](https://github.com/dongitran/Jira-Oauth-Token-Generator) to get ready-to-use config with all credentials including `cloud_id`. Just copy and paste!
+### IDE Configuration
 
-### For Claude Desktop
+<details>
+<summary><b>Claude Desktop</b></summary>
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -67,18 +84,17 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
         "--client_id", "YOUR_CLIENT_ID",
         "--client_secret", "YOUR_CLIENT_SECRET",
         "--cloud_id", "YOUR_CLOUD_ID",
-        "--default_project", "YOUR_PROJECT_KEY",
+        "--default_project", "YOUR_PROJECT",
         "--default_board_id", "YOUR_BOARD_ID"
-      ],
-      "env": {}
+      ]
     }
   }
 }
 ```
+</details>
 
-**Note:** `default_project` and `default_board_id` are optional. When set, tasks will auto-assign to the active sprint without specifying project/board each time. Board ID can be found in URL: `/boards/9` → board_id = 9.
-
-### For Cursor
+<details>
+<summary><b>Cursor</b></summary>
 
 Create `.cursor/mcp.json`:
 
@@ -93,16 +109,17 @@ Create `.cursor/mcp.json`:
         "--client_id", "YOUR_CLIENT_ID",
         "--client_secret", "YOUR_CLIENT_SECRET",
         "--cloud_id", "YOUR_CLOUD_ID"
-      ],
-      "env": {}
+      ]
     }
   }
 }
 ```
+</details>
 
-### For VS Code
+<details>
+<summary><b>VS Code / Kiro</b></summary>
 
-Add to `~/Library/Application Support/Code/User/mcp.json` (macOS):
+Add to settings or `.vscode/mcp.json`:
 
 ```json
 {
@@ -115,396 +132,112 @@ Add to `~/Library/Application Support/Code/User/mcp.json` (macOS):
         "--client_id", "YOUR_CLIENT_ID",
         "--client_secret", "YOUR_CLIENT_SECRET",
         "--cloud_id", "YOUR_CLOUD_ID"
-      ],
-      "env": {}
+      ]
     }
   }
 }
 ```
+</details>
 
-**Note:** After first run, tokens are cached to `~/.jira-mcp/tokens.cache` and will auto-refresh. You only need to provide credentials once!
+> 💡 **Tip:** Tokens are cached to `~/.jira-mcp/tokens.cache` and auto-refresh. Configure once!
 
-## Available Tools
+## 📖 Tool Examples
 
-### Field Selection (All Query Tools)
+### Task Management
 
-Most query tools support an optional `fields` parameter to return only specific fields, reducing response size and saving tokens for AI/LLM usage.
+```javascript
+// Get today's tasks
+get_my_tasks({ filter: "today" })
 
-**Example - Return only key and summary:**
-```json
-{
-  "filter": "today",
-  "fields": ["key", "summary"]
-}
+// Create task with sprint assignment
+create_task({
+  project: "URC",
+  summary: "New feature",
+  storyPoints: 5,
+  boardId: 9
+})
+
+// Update task status & assignee
+update_task({
+  taskKey: "URC-123",
+  status: "In Progress",
+  assignee: "john@example.com"
+})
+
+// Search tasks
+search_tasks({ query: "project = URC AND status = Open" })
 ```
 
-**Without fields parameter:** Returns all available fields (default behavior)
+### Sprint & Team
 
-### 1. `get_my_tasks`
-Get tasks assigned to current user with filters.
+```javascript
+// Get sprint tasks for team
+get_sprint_tasks({ boardId: 9 })
 
-**Parameters:**
-- `filter`: `todo` | `today` | `in-progress` | `high-priority` | `overdue` | `completed` | `all`
-- `period`: `today` | `week` | `month` (for completed filter)
-- `fields`: (optional) Array of fields to return. Available: `key`, `summary`, `status`, `priority`, `dueDate`, `url`
+// Daily standup - In Progress tasks
+get_sprint_daily_tasks({ boardId: 9 })
 
-**Example:**
-```json
-{
-  "filter": "today"
-}
+// Move tasks to sprint
+move_to_sprint({ sprintId: 50, taskKeys: ["URC-1", "URC-2"] })
 ```
 
-### 2. `get_tasks_by_date`
-Get tasks active on a specific date with daily hours calculation.
+### Comments
 
-**Parameters:**
-- `date`: Date in YYYY-MM-DD format
+```javascript
+// Add comment
+add_comment({ taskKey: "URC-123", body: "Working on this" })
 
-**Example:**
-```json
-{
-  "date": "2025-01-15"
-}
+// Get comments
+get_comments({ taskKey: "URC-123", maxResults: 10 })
 ```
 
-**Features:**
-- Calculates daily hours based on story points
-- Excludes weekends and Vietnamese holidays
-- Smart workload distribution
+### Workload
 
-### 3. `search_tasks`
-Search tasks using JQL query or keyword.
+```javascript
+// Daily hours for a date
+get_tasks_by_date({ date: "2025-01-15" })
 
-**Parameters:**
-- `query`: JQL query or keyword
-- `maxResults`: Maximum results (default: 50)
-
-**Example:**
-```json
-{
-  "query": "project = URC AND status = 'In Progress'",
-  "maxResults": 20
-}
+// Monthly hours calculation
+get_monthly_hours({ includeCompleted: true })
 ```
 
-### 4. `create_task`
-Create a new Jira task with optional subtasks and sprint assignment.
+### Field Selection
 
-**Parameters:**
-- `project`: Project key (required)
-- `summary`: Task title (required)
-- `description`: Task description (optional)
-- `issueType`: Issue type (default: "Task")
-- `priority`: Priority (default: "Medium")
-- `storyPoints`: Story points (optional)
-- `startDate`: Start date YYYY-MM-DD (optional)
-- `dueDate`: Due date YYYY-MM-DD (optional)
-- `sprintId`: Sprint ID for direct assignment (optional)
-- `boardId`: Board ID to auto-assign to active sprint (optional)
-- `subtasks`: Array of subtasks (optional)
+Reduce response size by selecting specific fields:
 
-**Example - Auto-assign to active sprint:**
-```json
-{
-  "project": "URC",
-  "summary": "Implement new feature",
-  "priority": "High",
-  "storyPoints": 5,
-  "boardId": 9,
-  "dueDate": "2025-01-20"
-}
+```javascript
+get_my_tasks({ 
+  filter: "today", 
+  fields: ["key", "summary", "status"] 
+})
 ```
 
-**Example - With subtasks:**
-```json
-{
-  "project": "URC",
-  "summary": "Implement new feature",
-  "priority": "High",
-  "storyPoints": 5,
-  "boardId": 9,
-  "subtasks": [
-    {
-      "summary": "Design API",
-      "storyPoints": 2
-    }
-  ]
-}
-```
+## 📊 Hours Calculation
 
-**Sprint Assignment Options:**
-- Use `boardId` to auto-assign to the active sprint of that board
-- Use `sprintId` for direct sprint assignment
-- Board ID can be found in URL: `https://urbox.atlassian.net/jira/software/projects/URC/boards/9` → boardId = 9
+**Daily Hours:** `(Story Points × 2) ÷ Working Days`
 
-### 5. `update_task_dates`
-Update start date and/or due date of a task.
+**Monthly Hours:** `(Total Hours ÷ Total Working Days) × Days in Month`
 
-**Parameters:**
-- `taskKey`: Task key (required)
-- `startDate`: Start date YYYY-MM-DD (optional)
-- `dueDate`: Due date YYYY-MM-DD (optional)
+- Excludes weekends & Vietnamese holidays
+- Handles cross-month tasks
+- Avoids double-counting (excludes parents with subtasks)
 
-### 6. `update_story_points`
-Update story points of a task.
-
-**Parameters:**
-- `taskKey`: Task key (required)
-- `storyPoints`: Story points value (required)
-
-### 7. `update_task`
-Update task fields including status, title, description, dates, and story points. Status change uses workflow transitions.
-
-**Parameters:**
-- `taskKey`: Task key (required)
-- `status`: Target status using workflow transitions (optional, e.g., "In Progress", "Done")
-- `title`: Task title/summary (optional)
-- `description`: Task description (optional)
-- `startDate`: Start date YYYY-MM-DD (optional)
-- `dueDate`: Due date YYYY-MM-DD (optional)
-- `storyPoints`: Story points value (optional)
-- `comment`: Comment to add when changing status (optional)
-
-**Example - Change status:**
-```json
-{
-  "taskKey": "URC-123",
-  "status": "In Progress"
-}
-```
-
-**Example - Change status with comment:**
-```json
-{
-  "taskKey": "URC-123",
-  "status": "Done",
-  "comment": "Task completed"
-}
-```
-
-**Example - Update multiple fields:**
-```json
-{
-  "taskKey": "URC-123",
-  "status": "In Progress",
-  "storyPoints": 8,
-  "dueDate": "2025-12-01"
-}
-```
-
-**Note:** Status transitions follow Jira workflow rules. If a transition is not available, the error message will show available transitions.
-
-### 8. `get_task_details`
-Get detailed information about a specific task including all subtasks.
-
-**Parameters:**
-- `taskKey`: Task key (required)
-
-**Example:**
-```json
-{
-  "taskKey": "URC-123"
-}
-```
-
-### 9. `create_subtask`
-Create a new subtask for an existing parent task.
-
-**Parameters:**
-- `parentTaskKey`: Parent task key (required)
-- `summary`: Subtask title (required)
-- `description`: Subtask description (optional)
-- `storyPoints`: Story points (optional)
-- `startDate`: Start date YYYY-MM-DD (optional)
-- `dueDate`: Due date YYYY-MM-DD (optional)
-
-**Example:**
-```json
-{
-  "parentTaskKey": "URC-123",
-  "summary": "Implement API endpoint",
-  "storyPoints": 3,
-  "dueDate": "2025-01-20"
-}
-```
-
-### 10. `get_monthly_hours`
-Calculate total monthly hours based on Story Points and working days.
-
-**Parameters:**
-- `includeCompleted`: Include completed tasks (default: true)
-
-**Example:**
-```json
-{
-  "includeCompleted": true
-}
-```
-
-**Features:**
-- Calculates hours distribution across months
-- Excludes weekends and Vietnamese holidays
-- Handles tasks spanning multiple months
-- Provides detailed breakdown per task
-
-### 11. `get_board_sprints`
-Get all sprints for a board. Useful to find board ID and sprint IDs.
-
-**Parameters:**
-- `boardId`: Board ID (required) - found in URL: `/boards/9` → boardId = 9
-- `state`: Sprint state filter: `active`, `future`, `closed`, or `all` (default: `active`)
-
-**Example:**
-```json
-{
-  "boardId": 9,
-  "state": "active"
-}
-```
-
-**Response includes:**
-- List of sprints with ID, name, state, start/end dates
-- Active sprint highlighted for easy reference
-
-### 12. `move_to_sprint`
-Move one or more existing tasks to a specific sprint.
-
-**Parameters:**
-- `sprintId`: Sprint ID to move tasks to (required)
-- `taskKeys`: Array of task keys to move (required)
-
-**Example:**
-```json
-{
-  "sprintId": 123,
-  "taskKeys": ["URC-100", "URC-101", "URC-102"]
-}
-```
-
-### 13. `get_sprint_tasks`
-Get all tasks in a sprint for all team members. Great for sprint overview and team workload analysis.
-
-**Parameters:**
-- `boardId`: Board ID to get active sprint (optional, uses default if set)
-- `sprintId`: Sprint ID for specific sprint (optional, overrides boardId)
-- `status`: Filter by status: `all`, `todo`, `in-progress`, `done` (default: `all`)
-
-**Example - Get all tasks in active sprint:**
-```json
-{
-  "boardId": 9
-}
-```
-
-**Example - Get only in-progress tasks:**
-```json
-{
-  "boardId": 9,
-  "status": "in-progress"
-}
-```
-
-**Response includes:**
-- Sprint info (id, name, state, dates)
-- All tasks with assignee, status, story points
-- Team summary with task count and total story points per member
-
-### 14. `get_sprint_daily_tasks`
-Get In Progress tasks for all team members in a sprint. Perfect for daily standup meetings.
-
-**Parameters:**
-- `boardId`: Board ID to get active sprint (optional, uses default if set)
-- `sprintId`: Sprint ID for specific sprint (optional, overrides boardId)
-
-**Example:**
-```json
-{
-  "boardId": 9
-}
-```
-
-**Response includes:**
-- Sprint info and current date
-- Team workload breakdown (task count per member)
-- All In Progress tasks with nested In Progress subtasks
-- Parent tasks count, standalone tasks count, subtasks count
-
-**Features:**
-- Shows only In Progress tasks (perfect for daily standup)
-- Parent tasks In Progress with their In Progress subtasks nested
-- Standalone tasks In Progress (no subtasks)
-- Subtasks of non-In Progress parents are excluded
-- Groups tasks by assignee for easy team overview
-
-## Daily & Monthly Hours Calculation
-
-### Daily Hours (`get_tasks_by_date`)
-
-Calculates daily hours intelligently:
-
-- **Formula**: `Daily Hours = (Story Points × 2) ÷ Working Days`
-- **Working Days**: Monday-Friday, excluding Vietnamese holidays
-- **Story Points Logic**: Excludes parent tasks with subtasks to avoid double counting
-
-**Example:**
-- Task: 5 story points
-- Duration: 5 working days
-- Daily Hours: (5 × 2) ÷ 5 = 2 hours/day
-
-### Monthly Hours (`get_monthly_hours`)
-
-Calculates monthly hours distribution:
-
-- **Formula**: `Monthly Hours = (Total Hours ÷ Total Working Days) × Working Days in Month`
-- **Cross-Month Tasks**: Automatically calculates portion for current month
-- **Working Days**: Monday-Friday, excluding Vietnamese holidays
-- **Completed Tasks**: Optionally include/exclude
-
-**Example:**
-- Task: 10 story points, spans 20 working days
-- Total Hours: 10 × 2 = 20 hours
-- Current month has 10 working days for this task
-- Monthly Hours: (20 ÷ 20) × 10 = 10 hours
-
-## Development
+## 🧪 Development
 
 ```bash
-# Run with auto-reload
-npm run dev
-
-# Lint code
-npm run lint
-
-# Fix lint issues
-npm run lint:fix
+npm run dev          # Auto-reload
+npm test             # Run 289 tests
+npm run test:coverage # Coverage report
+npm run lint         # Lint code
 ```
 
-## Contributing
+## 🔗 Links
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Links
-
-- [GitHub Repository](https://github.com/dongitran/Jira-MCP-Server)
+- [GitHub](https://github.com/dongitran/Jira-MCP-Server)
 - [OAuth Token Generator](https://github.com/dongitran/Jira-Oauth-Token-Generator)
-- [Model Context Protocol](https://modelcontextprotocol.io)
-- [Jira Cloud Platform](https://developer.atlassian.com/cloud/jira/platform/)
-
-## Support
-
-If you encounter any issues or have questions:
-- [Open an issue](https://github.com/dongitran/Jira-MCP-Server/issues)
-- Check the [MCP documentation](https://modelcontextprotocol.io/docs)
-
-## 👨‍💻 Author
-
-dongtran ✨
+- [MCP Protocol](https://modelcontextprotocol.io)
+- [Issues](https://github.com/dongitran/Jira-MCP-Server/issues)
 
 ## 📄 License
 
-MIT
-
----
-
-Made with ❤️ to make your work life easier!
+MIT - Made with ❤️ by dongtran
