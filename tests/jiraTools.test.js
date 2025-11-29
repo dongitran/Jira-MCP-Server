@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Mock jiraService
 const mockJiraService = {
   cloudId: 'mock-cloud-id',
+  siteUrl: 'https://test.atlassian.net',
   defaultProject: null,
   defaultBoardId: null,
   getCurrentUser: vi.fn(),
@@ -15,7 +16,8 @@ const mockJiraService = {
   moveIssuesToSprint: vi.fn(),
   getSprint: vi.fn(),
   getTransitions: vi.fn(),
-  doTransition: vi.fn()
+  doTransition: vi.fn(),
+  getBrowseUrl: vi.fn((issueKey) => `https://test.atlassian.net/browse/${issueKey}`)
 };
 
 // Mock MCP server

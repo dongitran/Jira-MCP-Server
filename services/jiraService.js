@@ -9,6 +9,7 @@ class JiraService {
     this.baseURL = null;
     this.accessToken = null;
     this.cloudId = null;
+    this.siteUrl = null;
     this.maxRetries = retryConfig.maxRetries;
     this.requestTimeout = retryConfig.requestTimeout;
     
@@ -22,6 +23,19 @@ class JiraService {
       timeout: 60000, // 60 seconds
       enabled: true // Set to false to disable circuit breaker
     });
+  }
+
+  /**
+   * Get browse URL for an issue
+   * @param {string} issueKey - Issue key (e.g., "URC-123")
+   * @returns {string} Browse URL
+   */
+  getBrowseUrl(issueKey) {
+    if (this.siteUrl) {
+      return `${this.siteUrl}/browse/${issueKey}`;
+    }
+    // Fallback to API-style URL if siteUrl not available
+    return `https://api.atlassian.com/ex/jira/${this.cloudId}/browse/${issueKey}`;
   }
 
   async initialize() {

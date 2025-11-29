@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0-alpha.2] - 2025-11-29
+
+### Fixed
+- **Browse URL Format**: Fixed issue URLs to use correct Atlassian site URL format
+  - Before: `https://api.atlassian.com/ex/jira/{cloudId}/browse/{issueKey}`
+  - After: `https://{site}.atlassian.net/browse/{issueKey}`
+- Added `siteUrl` property fetched from accessible-resources API
+- Added `getBrowseUrl()` helper method in jiraService
+- URLs now cached along with cloudId for faster startup
+
+---
+
 ## [1.2.0-alpha.1] - 2025-11-28
 
 ### Added

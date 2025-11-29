@@ -10,6 +10,7 @@ class TokenManager {
     this.clientId = null;
     this.clientSecret = null;
     this.cloudId = null;
+    this.siteUrl = null;
     this.tokenUrl = 'https://auth.atlassian.com/oauth/token';
     this.resourcesUrl = 'https://api.atlassian.com/oauth/token/accessible-resources';
     this.cacheDir = path.join(os.homedir(), '.jira-mcp');
@@ -31,6 +32,7 @@ class TokenManager {
       this.accessToken = cachedTokens.accessToken;
       this.refreshToken = cachedTokens.refreshToken;
       this.cloudId = cachedTokens.cloudId;
+      this.siteUrl = cachedTokens.siteUrl || null;
     } else {
       // Use provided tokens
       this.accessToken = config.access_token;
@@ -55,7 +57,10 @@ class TokenManager {
         const cached = JSON.parse(fs.readFileSync(this.cacheFile, 'utf8'));
         // Cache valid for 7 days
         if (cached.cloudId && cached.timestamp && (Date.now() - cached.timestamp < 7 * 24 * 60 * 60 * 1000)) {
-          // Silent load
+          // Silent load - also restore siteUrl if available
+          if (cached.siteUrl) {
+            this.siteUrl = cached.siteUrl;
+          }
           return cached.cloudId;
         }
       }
@@ -65,13 +70,14 @@ class TokenManager {
     return null;
   }
 
-  saveCachedCloudId(cloudId) {
+  saveCachedCloudId(cloudId, siteUrl = null) {
     try {
       if (!fs.existsSync(this.cacheDir)) {
         fs.mkdirSync(this.cacheDir, { recursive: true });
       }
       fs.writeFileSync(this.cacheFile, JSON.stringify({
         cloudId: cloudId,
+        siteUrl: siteUrl,
         timestamp: Date.now()
       }));
     } catch (error) {
@@ -119,6 +125,7 @@ class TokenManager {
         accessToken: this.accessToken,
         refreshToken: this.refreshToken,
         cloudId: this.cloudId,
+        siteUrl: this.siteUrl,
         clientId: this.clientId,
         timestamp: Date.now(),
         lastRefreshed: new Date().toISOString()
@@ -279,9 +286,12 @@ class TokenManager {
         });
 
         if (response.data && response.data.length > 0) {
-          this.cloudId = response.data[0].id;
-          this.saveCachedCloudId(this.cloudId);
+          const resource = response.data[0];
+          this.cloudId = resource.id;
+          this.siteUrl = resource.url;
+          this.saveCachedCloudId(this.cloudId, this.siteUrl);
           console.error('✅ Fetched Cloud ID:', this.cloudId);
+          console.error('✅ Site URL:', this.siteUrl);
           return;
         } else {
           throw new Error('No accessible resources found');
@@ -309,6 +319,10 @@ class TokenManager {
 
   getCloudId() {
     return this.cloudId;
+  }
+
+  getSiteUrl() {
+    return this.siteUrl;
   }
 }
 

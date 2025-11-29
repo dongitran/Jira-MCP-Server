@@ -38,6 +38,7 @@ if (!config.access_token || !config.refresh_token || !config.client_id || !confi
 // Initialize jiraService with cloud ID (priority: CLI arg > cached)
 jiraService.accessToken = tokenManager.accessToken;
 jiraService.cloudId = tokenManager.cloudId;
+jiraService.siteUrl = tokenManager.siteUrl;
 
 if (!jiraService.cloudId) {
   console.error('❌ Missing Cloud ID');
@@ -47,6 +48,9 @@ if (!jiraService.cloudId) {
 
 jiraService.baseURL = `https://api.atlassian.com/ex/jira/${jiraService.cloudId}`;
 console.error(`☁️  Using Cloud ID: ${jiraService.cloudId}`);
+if (jiraService.siteUrl) {
+  console.error(`🌐 Site URL: ${jiraService.siteUrl}`);
+}
 
 // Set default project and board from config (optional)
 jiraService.defaultProject = config.default_project || null;
@@ -59,7 +63,7 @@ if (jiraService.defaultBoardId) {
   console.error(`📋 Default Board ID: ${jiraService.defaultBoardId} (auto-assign to active sprint)`);
 }
 
-const SERVER_VERSION = '1.2.0-alpha.1';
+const SERVER_VERSION = '1.2.0-alpha.2';
 
 // Main async function
 async function main() {

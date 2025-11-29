@@ -81,7 +81,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         status: issue.fields.status.name,
         priority: issue.fields.priority ? issue.fields.priority.name : 'None',
         dueDate: issue.fields.duedate || null,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+        url: jiraService.getBrowseUrl(issue.key)
       }));
 
       const output = {
@@ -196,7 +196,7 @@ export function registerJiraTools(mcpServer, jiraService) {
             dailyHours: Math.round(dailyHours * 100) / 100,
             startDate: effectiveStartDate ? moment(effectiveStartDate).format('YYYY-MM-DD') : null,
             dueDate: moment(dueDate).format('YYYY-MM-DD'),
-            url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+            url: jiraService.getBrowseUrl(issue.key)
           };
         });
 
@@ -255,7 +255,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         status: issue.fields.status.name,
         priority: issue.fields.priority ? issue.fields.priority.name : 'None',
         assignee: issue.fields.assignee ? issue.fields.assignee.displayName : 'Unassigned',
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+        url: jiraService.getBrowseUrl(issue.key)
       }));
 
       const output = {
@@ -436,7 +436,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         task: {
           key: parentTask.key,
           summary: summary,
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${parentTask.key}`,
+          url: jiraService.getBrowseUrl(parentTask.key),
           sprint: sprintInfo,
           subtasks: createdSubtasks
         }
@@ -486,7 +486,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         success: true,
         taskKey: taskKey,
         updatedFields: updatedFieldsList,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${taskKey}`
+        url: jiraService.getBrowseUrl(taskKey)
       };
 
       return {
@@ -522,7 +522,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         taskKey: taskKey,
         storyPoints: storyPoints,
         estimatedHours: storyPoints * 2,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${taskKey}`
+        url: jiraService.getBrowseUrl(taskKey)
       };
 
       return {
@@ -637,7 +637,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         taskKey: taskKey,
         updatedFields: updatedFieldsList,
         statusTransition: status ? { from: previousStatus, to: newStatus } : null,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${taskKey}`
+        url: jiraService.getBrowseUrl(taskKey)
       };
 
       return {
@@ -707,7 +707,7 @@ export function registerJiraTools(mcpServer, jiraService) {
               startDate: subtaskDetail.fields.customfield_10015 || null,
               dueDate: subtaskDetail.fields.duedate || null,
               created: subtaskDetail.fields.created,
-              url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${subtaskDetail.key}`
+              url: jiraService.getBrowseUrl(subtaskDetail.key)
             });
           } catch (error) {
             console.error(`Failed to fetch subtask ${subtask.key}:`, error.message);
@@ -730,7 +730,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         hasSubtasks: issue.fields.subtasks && issue.fields.subtasks.length > 0,
         subtasksCount: subtasksDetails.length,
         subtasks: subtasksDetails,
-        url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+        url: jiraService.getBrowseUrl(issue.key)
       };
 
       return {
@@ -811,7 +811,7 @@ export function registerJiraTools(mcpServer, jiraService) {
           storyPoints: storyPoints || null,
           startDate: startDate || null,
           dueDate: dueDate || null,
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${createdSubtask.key}`
+          url: jiraService.getBrowseUrl(createdSubtask.key)
         }
       };
 
@@ -993,7 +993,7 @@ export function registerJiraTools(mcpServer, jiraService) {
           currentMonthWorkingDays: calculation.currentMonthWorkingDays,
           calculation: calculation.calculation,
           spansMultipleMonths: spansMultipleMonths(startDate, endDate),
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+          url: jiraService.getBrowseUrl(issue.key)
         };
 
         breakdown.push(taskData);
@@ -1246,7 +1246,7 @@ export function registerJiraTools(mcpServer, jiraService) {
           storyPoints: storyPoints,
           startDate: issue.fields.customfield_10015 || null,
           dueDate: issue.fields.duedate || null,
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+          url: jiraService.getBrowseUrl(issue.key)
         };
       });
 
@@ -1378,7 +1378,7 @@ export function registerJiraTools(mcpServer, jiraService) {
           startDate: issue.fields.customfield_10015 || null,
           dueDate: issue.fields.duedate || null,
           inProgressSubtasks: [], // Will be populated for parent tasks
-          url: `https://api.atlassian.com/ex/jira/${jiraService.cloudId}/browse/${issue.key}`
+          url: jiraService.getBrowseUrl(issue.key)
         };
 
         tasksMap.set(issue.key, taskData);
