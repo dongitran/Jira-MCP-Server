@@ -320,6 +320,46 @@ class JiraService {
     return await this.makeRequest(`/issue/${issueKey}/transitions`, 'POST', data);
   }
 
+  /**
+   * Add a comment to an issue
+   * @param {string} issueKey - Issue key (e.g., "URC-123")
+   * @param {string} body - Comment text
+   * @returns {object} Created comment data
+   */
+  async addComment(issueKey, body) {
+    const data = {
+      body: {
+        type: 'doc',
+        version: 1,
+        content: [{
+          type: 'paragraph',
+          content: [{ type: 'text', text: body }]
+        }]
+      }
+    };
+    return await this.makeRequest(`/issue/${issueKey}/comment`, 'POST', data);
+  }
+
+  /**
+   * Get comments for an issue
+   * @param {string} issueKey - Issue key (e.g., "URC-123")
+   * @param {number} maxResults - Maximum number of comments to return
+   * @param {string} orderBy - Order by field (default: -created for newest first)
+   * @returns {object} Comments data with total and comments array
+   */
+  async getComments(issueKey, maxResults = 50, orderBy = '-created') {
+    return await this.makeRequest(`/issue/${issueKey}/comment?maxResults=${maxResults}&orderBy=${orderBy}`);
+  }
+
+  /**
+   * Search for users by query (for assignee lookup)
+   * @param {string} query - Search query (email, name, or accountId)
+   * @returns {object[]} Array of matching users
+   */
+  async searchUsers(query) {
+    return await this.makeRequest(`/user/search?query=${encodeURIComponent(query)}`);
+  }
+
   buildJQL(filters) {
     const conditions = [];
 

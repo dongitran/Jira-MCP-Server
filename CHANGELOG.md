@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0-alpha.5] - 2025-11-29
+
+### Added
+- **New Tool `add_comment`**: Add comments to Jira tasks
+  - Simple API: `add_comment({ taskKey: "URC-123", body: "Comment text" })`
+  - Returns comment ID, author, and creation timestamp
+
+- **New Tool `get_comments`**: Get comments for a Jira task
+  - Supports pagination with `maxResults` parameter
+  - Field selection support for response optimization
+  - Extracts text from Atlassian Document Format automatically
+
+- **Assignee Support in `update_task`**: Update task assignee
+  - Assign by account ID: `update_task({ taskKey: "URC-123", assignee: "accountId" })`
+  - Assign by email: `update_task({ taskKey: "URC-123", assignee: "user@example.com" })`
+  - Unassign: `update_task({ taskKey: "URC-123", assignee: "unassigned" })`
+
+### Changed
+- Total tools increased from 14 to 16
+
+### Example Usage
+```javascript
+// Add a comment
+add_comment({ taskKey: "URC-123", body: "Working on this now" })
+
+// Get comments
+get_comments({ taskKey: "URC-123", maxResults: 10 })
+
+// Update assignee by email
+update_task({ taskKey: "URC-123", assignee: "john@example.com" })
+
+// Unassign task
+update_task({ taskKey: "URC-123", assignee: "unassigned" })
+```
+
+---
+
 ## [1.2.0-alpha.4] - 2025-11-29
 
 ### Performance

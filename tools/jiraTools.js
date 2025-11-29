@@ -576,7 +576,7 @@ export function registerJiraTools(mcpServer, jiraService) {
     'update_task',
     {
       title: 'Update Task',
-      description: 'Update task fields including status, title, description, dates, and story points. Status change uses workflow transitions. Only provided fields will be updated.',
+      description: 'Update task fields including status, title, description, dates, story points, and assignee. Status change uses workflow transitions. Only provided fields will be updated.',
       inputSchema: z.object({
         taskKey: z.string().describe('Task key (e.g., "URC-123")'),
         status: z.string().optional().describe('Target status (e.g., "In Progress", "Done"). Uses workflow transitions.'),
@@ -585,6 +585,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         startDate: z.string().optional().describe('Start date (YYYY-MM-DD)'),
         dueDate: z.string().optional().describe('Due date (YYYY-MM-DD)'),
         storyPoints: z.number().optional().describe('Story points value'),
+        assignee: z.string().optional().describe('Assignee account ID or email. Use "unassigned" to remove assignee.'),
         comment: z.string().optional().describe('Comment to add when changing status')
       }),
       outputSchema: z.object({
@@ -593,7 +594,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         updatedFields: z.array(z.string())
       })
     },
-    async ({ taskKey, status, title, description, startDate, dueDate, storyPoints, comment }) => {
+    async ({ taskKey, status, title, description, startDate, dueDate, storyPoints, assignee, comment }) => {
       const updatedFieldsList = [];
       let previousStatus = null;
       let newStatus = null;
@@ -664,6 +665,28 @@ export function registerJiraTools(mcpServer, jiraService) {
       if (storyPoints !== undefined) {
         updateFields.customfield_10016 = storyPoints;
         updatedFieldsList.push('storyPoints');
+      }
+
+      // Update assignee
+      if (assignee !== undefined) {
+        if (assignee === 'unassigned' || assignee === '' || assignee === null) {
+          updateFields.assignee = null;
+        } else {
+          // Check if it's an account ID (starts with specific pattern) or email
+          if (assignee.includes('@')) {
+            // Search for user by email
+            const users = await jiraService.searchUsers(assignee);
+            if (users && users.length > 0) {
+              updateFields.assignee = { accountId: users[0].accountId };
+            } else {
+              throw new Error(`User not found with email: ${assignee}`);
+            }
+          } else {
+            // Assume it's an account ID
+            updateFields.assignee = { accountId: assignee };
+          }
+        }
+        updatedFieldsList.push('assignee');
       }
 
       // Perform field updates if any
@@ -1546,6 +1569,114 @@ export function registerJiraTools(mcpServer, jiraService) {
         teamMemberCount: teamWorkload.length,
         teamWorkload: teamWorkload,
         tasks: selectTaskFields(finalTasks, fields)
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
+
+  // Tool 15: Add Comment
+  mcpServer.registerTool(
+    'add_comment',
+    {
+      title: 'Add Comment',
+      description: 'Add a comment to a Jira task',
+      inputSchema: z.object({
+        taskKey: z.string().describe('Task key (e.g., "URC-123")'),
+        body: z.string().describe('Comment text')
+      }),
+      outputSchema: z.object({
+        success: z.boolean(),
+        comment: z.object({
+          id: z.string(),
+          body: z.string(),
+          author: z.string(),
+          created: z.string()
+        })
+      })
+    },
+    async ({ taskKey, body }) => {
+      const result = await jiraService.addComment(taskKey, body);
+
+      const output = {
+        success: true,
+        taskKey: taskKey,
+        comment: {
+          id: result.id,
+          body: body,
+          author: result.author?.displayName || 'Unknown',
+          created: result.created,
+          url: jiraService.getBrowseUrl(taskKey)
+        }
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
+        structuredContent: output
+      };
+    }
+  );
+
+  // Tool 16: Get Comments
+  mcpServer.registerTool(
+    'get_comments',
+    {
+      title: 'Get Comments',
+      description: 'Get comments for a Jira task',
+      inputSchema: z.object({
+        taskKey: z.string().describe('Task key (e.g., "URC-123")'),
+        maxResults: z.number().default(20).describe('Maximum number of comments to return (default: 20)'),
+        fields: z.array(z.string()).optional()
+          .describe('Fields to return for each comment. Available: id, body, author, authorAccountId, created, updated. Default: all fields')
+      }),
+      outputSchema: z.object({
+        taskKey: z.string(),
+        total: z.number(),
+        comments: z.array(z.object({
+          id: z.string(),
+          body: z.string(),
+          author: z.string(),
+          created: z.string()
+        }))
+      })
+    },
+    async ({ taskKey, maxResults, fields }) => {
+      const result = await jiraService.getComments(taskKey, maxResults);
+
+      // Extract text from Atlassian Document Format
+      const extractText = (content) => {
+        if (!content) return '';
+        if (typeof content === 'string') return content;
+        if (content.content) {
+          return content.content.map(node => {
+            if (node.type === 'paragraph' && node.content) {
+              return node.content.map(c => c.text || '').join('');
+            }
+            if (node.type === 'text') return node.text || '';
+            return '';
+          }).join('\n');
+        }
+        return '';
+      };
+
+      const comments = (result.comments || []).map(comment => ({
+        id: comment.id,
+        body: extractText(comment.body),
+        author: comment.author?.displayName || 'Unknown',
+        authorAccountId: comment.author?.accountId || null,
+        created: comment.created,
+        updated: comment.updated
+      }));
+
+      const output = {
+        taskKey: taskKey,
+        total: result.total || comments.length,
+        returned: comments.length,
+        comments: selectTaskFields(comments, fields),
+        url: jiraService.getBrowseUrl(taskKey)
       };
 
       return {

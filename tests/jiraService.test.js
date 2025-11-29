@@ -422,6 +422,73 @@ describe('JiraService', () => {
         }));
       });
     });
+
+    describe('addComment', () => {
+      it('should call POST /issue/{key}/comment', async () => {
+        await jiraService.addComment('TEST-123', 'This is a comment');
+
+        expect(axios).toHaveBeenCalledWith(expect.objectContaining({
+          method: 'POST',
+          url: expect.stringContaining('/issue/TEST-123/comment'),
+          data: {
+            body: {
+              type: 'doc',
+              version: 1,
+              content: [{
+                type: 'paragraph',
+                content: [{ type: 'text', text: 'This is a comment' }]
+              }]
+            }
+          }
+        }));
+      });
+    });
+
+    describe('getComments', () => {
+      it('should call GET /issue/{key}/comment with default params', async () => {
+        await jiraService.getComments('TEST-123');
+
+        expect(axios).toHaveBeenCalledWith(expect.objectContaining({
+          method: 'GET',
+          url: expect.stringContaining('/issue/TEST-123/comment?maxResults=50&orderBy=-created')
+        }));
+      });
+
+      it('should call GET /issue/{key}/comment with custom maxResults', async () => {
+        await jiraService.getComments('TEST-123', 10);
+
+        expect(axios).toHaveBeenCalledWith(expect.objectContaining({
+          url: expect.stringContaining('/issue/TEST-123/comment?maxResults=10&orderBy=-created')
+        }));
+      });
+
+      it('should call GET /issue/{key}/comment with custom orderBy', async () => {
+        await jiraService.getComments('TEST-123', 50, 'created');
+
+        expect(axios).toHaveBeenCalledWith(expect.objectContaining({
+          url: expect.stringContaining('/issue/TEST-123/comment?maxResults=50&orderBy=created')
+        }));
+      });
+    });
+
+    describe('searchUsers', () => {
+      it('should call GET /user/search with query', async () => {
+        await jiraService.searchUsers('john@example.com');
+
+        expect(axios).toHaveBeenCalledWith(expect.objectContaining({
+          method: 'GET',
+          url: expect.stringContaining('/user/search?query=john%40example.com')
+        }));
+      });
+
+      it('should encode special characters in query', async () => {
+        await jiraService.searchUsers('john doe');
+
+        expect(axios).toHaveBeenCalledWith(expect.objectContaining({
+          url: expect.stringContaining('/user/search?query=john%20doe')
+        }));
+      });
+    });
   });
 
   describe('buildJQL', () => {

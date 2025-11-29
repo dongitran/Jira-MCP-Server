@@ -17,6 +17,9 @@ const mockJiraService = {
   getSprint: vi.fn(),
   getTransitions: vi.fn(),
   doTransition: vi.fn(),
+  addComment: vi.fn(),
+  getComments: vi.fn(),
+  searchUsers: vi.fn(),
   getBrowseUrl: vi.fn((issueKey) => `https://test.atlassian.net/browse/${issueKey}`)
 };
 
@@ -41,7 +44,7 @@ describe('jiraTools', () => {
 
 
   describe('registerJiraTools', () => {
-    it('should register all 14 tools', async () => {
+    it('should register all 16 tools', async () => {
       const { registerJiraTools } = await import('../tools/jiraTools.js');
       registerJiraTools(mockMcpServer, mockJiraService);
 
@@ -60,7 +63,9 @@ describe('jiraTools', () => {
       expect(toolNames).toContain('move_to_sprint');
       expect(toolNames).toContain('get_sprint_tasks');
       expect(toolNames).toContain('get_sprint_daily_tasks');
-      expect(toolNames.length).toBe(14);
+      expect(toolNames).toContain('add_comment');
+      expect(toolNames).toContain('get_comments');
+      expect(toolNames.length).toBe(16);
     });
   });
 
@@ -912,6 +917,273 @@ describe('jiraTools', () => {
 
       // Should return empty object for each task
       expect(Object.keys(result.structuredContent.tasks[0])).toHaveLength(0);
+    });
+  });
+
+  describe('add_comment', () => {
+    beforeEach(async () => {
+      const { registerJiraTools } = await import('../tools/jiraTools.js');
+      registerJiraTools(mockMcpServer, mockJiraService);
+    });
+
+    it('should add a comment to a task', async () => {
+      mockJiraService.addComment.mockResolvedValue({
+        id: 'comment-123',
+        author: { displayName: 'John Doe' },
+        created: '2025-11-29T10:00:00.000Z'
+      });
+
+      const handler = mockMcpServer.registeredTools['add_comment'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        body: 'This is a test comment'
+      });
+
+      expect(mockJiraService.addComment).toHaveBeenCalledWith('TEST-1', 'This is a test comment');
+      expect(result.structuredContent.success).toBe(true);
+      expect(result.structuredContent.comment.id).toBe('comment-123');
+      expect(result.structuredContent.comment.body).toBe('This is a test comment');
+      expect(result.structuredContent.comment.author).toBe('John Doe');
+    });
+
+    it('should handle missing author gracefully', async () => {
+      mockJiraService.addComment.mockResolvedValue({
+        id: 'comment-456',
+        author: null,
+        created: '2025-11-29T10:00:00.000Z'
+      });
+
+      const handler = mockMcpServer.registeredTools['add_comment'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        body: 'Comment without author'
+      });
+
+      expect(result.structuredContent.comment.author).toBe('Unknown');
+    });
+  });
+
+  describe('get_comments', () => {
+    beforeEach(async () => {
+      const { registerJiraTools } = await import('../tools/jiraTools.js');
+      registerJiraTools(mockMcpServer, mockJiraService);
+    });
+
+    it('should get comments for a task', async () => {
+      mockJiraService.getComments.mockResolvedValue({
+        total: 2,
+        comments: [
+          {
+            id: 'comment-1',
+            body: {
+              type: 'doc',
+              version: 1,
+              content: [{
+                type: 'paragraph',
+                content: [{ type: 'text', text: 'First comment' }]
+              }]
+            },
+            author: { displayName: 'John Doe', accountId: 'user-123' },
+            created: '2025-11-29T10:00:00.000Z',
+            updated: '2025-11-29T10:00:00.000Z'
+          },
+          {
+            id: 'comment-2',
+            body: {
+              type: 'doc',
+              version: 1,
+              content: [{
+                type: 'paragraph',
+                content: [{ type: 'text', text: 'Second comment' }]
+              }]
+            },
+            author: { displayName: 'Jane Doe', accountId: 'user-456' },
+            created: '2025-11-29T11:00:00.000Z',
+            updated: '2025-11-29T11:00:00.000Z'
+          }
+        ]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_comments'].handler;
+      const result = await handler({ taskKey: 'TEST-1', maxResults: 20 });
+
+      expect(mockJiraService.getComments).toHaveBeenCalledWith('TEST-1', 20);
+      expect(result.structuredContent.total).toBe(2);
+      expect(result.structuredContent.comments).toHaveLength(2);
+      expect(result.structuredContent.comments[0].body).toBe('First comment');
+      expect(result.structuredContent.comments[1].body).toBe('Second comment');
+    });
+
+    it('should handle empty comments', async () => {
+      mockJiraService.getComments.mockResolvedValue({
+        total: 0,
+        comments: []
+      });
+
+      const handler = mockMcpServer.registeredTools['get_comments'].handler;
+      const result = await handler({ taskKey: 'TEST-1', maxResults: 20 });
+
+      expect(result.structuredContent.total).toBe(0);
+      expect(result.structuredContent.comments).toHaveLength(0);
+    });
+
+    it('should apply field selection', async () => {
+      mockJiraService.getComments.mockResolvedValue({
+        total: 1,
+        comments: [{
+          id: 'comment-1',
+          body: {
+            type: 'doc',
+            version: 1,
+            content: [{
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'Test comment' }]
+            }]
+          },
+          author: { displayName: 'John Doe', accountId: 'user-123' },
+          created: '2025-11-29T10:00:00.000Z',
+          updated: '2025-11-29T10:00:00.000Z'
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_comments'].handler;
+      const result = await handler({ taskKey: 'TEST-1', maxResults: 20, fields: ['id', 'body'] });
+
+      expect(result.structuredContent.comments[0]).toHaveProperty('id');
+      expect(result.structuredContent.comments[0]).toHaveProperty('body');
+      expect(result.structuredContent.comments[0]).not.toHaveProperty('author');
+      expect(result.structuredContent.comments[0]).not.toHaveProperty('created');
+    });
+
+    it('should handle missing author in comments', async () => {
+      mockJiraService.getComments.mockResolvedValue({
+        total: 1,
+        comments: [{
+          id: 'comment-1',
+          body: { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Test' }] }] },
+          author: null,
+          created: '2025-11-29T10:00:00.000Z',
+          updated: '2025-11-29T10:00:00.000Z'
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_comments'].handler;
+      const result = await handler({ taskKey: 'TEST-1', maxResults: 20 });
+
+      expect(result.structuredContent.comments[0].author).toBe('Unknown');
+      expect(result.structuredContent.comments[0].authorAccountId).toBeNull();
+    });
+  });
+
+  describe('update_task with assignee', () => {
+    beforeEach(async () => {
+      const { registerJiraTools } = await import('../tools/jiraTools.js');
+      registerJiraTools(mockMcpServer, mockJiraService);
+    });
+
+    it('should update assignee by account ID', async () => {
+      mockJiraService.updateIssue.mockResolvedValue({});
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        assignee: '5b10ac8d82e05b22cc7d4ef5'
+      });
+
+      expect(mockJiraService.updateIssue).toHaveBeenCalledWith('TEST-1', {
+        fields: expect.objectContaining({
+          assignee: { accountId: '5b10ac8d82e05b22cc7d4ef5' }
+        })
+      });
+      expect(result.structuredContent.updatedFields).toContain('assignee');
+    });
+
+    it('should update assignee by email', async () => {
+      mockJiraService.searchUsers.mockResolvedValue([
+        { accountId: 'user-found-123', displayName: 'John Doe' }
+      ]);
+      mockJiraService.updateIssue.mockResolvedValue({});
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        assignee: 'john@example.com'
+      });
+
+      expect(mockJiraService.searchUsers).toHaveBeenCalledWith('john@example.com');
+      expect(mockJiraService.updateIssue).toHaveBeenCalledWith('TEST-1', {
+        fields: expect.objectContaining({
+          assignee: { accountId: 'user-found-123' }
+        })
+      });
+      expect(result.structuredContent.updatedFields).toContain('assignee');
+    });
+
+    it('should throw error when user not found by email', async () => {
+      mockJiraService.searchUsers.mockResolvedValue([]);
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      
+      await expect(handler({
+        taskKey: 'TEST-1',
+        assignee: 'notfound@example.com'
+      })).rejects.toThrow('User not found with email: notfound@example.com');
+    });
+
+    it('should unassign task when assignee is "unassigned"', async () => {
+      mockJiraService.updateIssue.mockResolvedValue({});
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        assignee: 'unassigned'
+      });
+
+      expect(mockJiraService.updateIssue).toHaveBeenCalledWith('TEST-1', {
+        fields: expect.objectContaining({
+          assignee: null
+        })
+      });
+      expect(result.structuredContent.updatedFields).toContain('assignee');
+    });
+
+    it('should unassign task when assignee is empty string', async () => {
+      mockJiraService.updateIssue.mockResolvedValue({});
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        assignee: ''
+      });
+
+      expect(mockJiraService.updateIssue).toHaveBeenCalledWith('TEST-1', {
+        fields: expect.objectContaining({
+          assignee: null
+        })
+      });
+    });
+
+    it('should update assignee along with other fields', async () => {
+      mockJiraService.updateIssue.mockResolvedValue({});
+
+      const handler = mockMcpServer.registeredTools['update_task'].handler;
+      const result = await handler({
+        taskKey: 'TEST-1',
+        title: 'Updated Title',
+        assignee: 'user-123',
+        storyPoints: 5
+      });
+
+      expect(mockJiraService.updateIssue).toHaveBeenCalledWith('TEST-1', {
+        fields: expect.objectContaining({
+          summary: 'Updated Title',
+          assignee: { accountId: 'user-123' },
+          customfield_10016: 5
+        })
+      });
+      expect(result.structuredContent.updatedFields).toContain('title');
+      expect(result.structuredContent.updatedFields).toContain('assignee');
+      expect(result.structuredContent.updatedFields).toContain('storyPoints');
     });
   });
 });

@@ -19,6 +19,11 @@ const mockJiraService = {
   getActiveSprint: vi.fn(),
   moveIssuesToSprint: vi.fn(),
   getSprint: vi.fn(),
+  getTransitions: vi.fn(),
+  doTransition: vi.fn(),
+  addComment: vi.fn(),
+  getComments: vi.fn(),
+  searchUsers: vi.fn(),
   getBrowseUrl: vi.fn((issueKey) => `https://test.atlassian.net/browse/${issueKey}`)
 };
 
