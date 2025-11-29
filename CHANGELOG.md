@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2025-11-29
+
+### 🎉 Stable Release v1.2.0
+
+This release includes all features from v1.2.0 alpha versions, thoroughly tested with **289 tests** (100% pass rate) and production-ready.
+
+### Highlights
+- **16 Powerful Tools** for complete Jira task management
+- **Comment Support** - Add and retrieve comments on tasks
+- **Assignee Management** - Update assignee by email or account ID
+- **Status Transitions** - Change task status using Jira workflow
+- **Field Selection** - Optimize responses by selecting specific fields
+- **N+1 Query Fix** - Batch fetch subtasks for better performance
+- **Comprehensive Test Suite** - 289 tests covering all modules and edge cases
+
+### New Tools in v1.2.0
+- `add_comment` - Add comments to Jira tasks
+- `get_comments` - Get comments for a task with pagination
+
+### New Features
+- **Assignee Support**: Update task assignee by email or account ID
+- **Status Transitions**: Change task status using workflow transitions
+- **Field Selection**: Return only specific fields to reduce response size
+- **N+1 Query Fix**: Batch fetch subtasks (5x faster for tasks with subtasks)
+- **Browse URL Fix**: Correct Atlassian site URL format
+
+---
+
 ## [1.2.0-alpha.5] - 2025-11-29
 
 ### Added
