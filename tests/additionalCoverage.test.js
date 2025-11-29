@@ -318,4 +318,221 @@ describe('Additional Coverage Tests', () => {
       expect(result.structuredContent.subtasksCount).toBe(0); // Failed to fetch
     });
   });
+
+  describe('create_subtask edge cases', () => {
+    beforeEach(async () => {
+      const { registerJiraTools } = await import('../tools/jiraTools.js');
+      registerJiraTools(mockMcpServer, mockJiraService);
+    });
+
+    it('should create subtask with description', async () => {
+      mockJiraService.getCurrentUser.mockResolvedValue({ 
+        accountId: 'user-123',
+        displayName: 'John Doe'
+      });
+      mockJiraService.getIssue.mockResolvedValue({
+        fields: { project: { key: 'TEST' } }
+      });
+      mockJiraService.createIssue.mockResolvedValue({ key: 'TEST-50' });
+
+      const handler = mockMcpServer.registeredTools['create_subtask'].handler;
+      const result = await handler({
+        parentTaskKey: 'TEST-1',
+        summary: 'Subtask with description',
+        description: 'This is a detailed description',
+        storyPoints: 3,
+        startDate: '2025-01-15',
+        dueDate: '2025-01-20'
+      });
+
+      expect(mockJiraService.createIssue).toHaveBeenCalledWith({
+        fields: expect.objectContaining({
+          summary: 'Subtask with description',
+          description: {
+            type: 'doc',
+            version: 1,
+            content: [{
+              type: 'paragraph',
+              content: [{ type: 'text', text: 'This is a detailed description' }]
+            }]
+          },
+          customfield_10016: 3,
+          customfield_10015: '2025-01-15',
+          duedate: '2025-01-20'
+        })
+      });
+      expect(result.structuredContent.success).toBe(true);
+    });
+  });
+
+  describe('get_sprint_tasks without boardId', () => {
+    beforeEach(async () => {
+      mockJiraService.defaultBoardId = null;
+      const { registerJiraTools } = await import('../tools/jiraTools.js');
+      mockMcpServer.registeredTools = {};
+      registerJiraTools(mockMcpServer, mockJiraService);
+    });
+
+    it('should throw error when no boardId or sprintId provided', async () => {
+      const handler = mockMcpServer.registeredTools['get_sprint_tasks'].handler;
+      
+      await expect(handler({ status: 'all' })).rejects.toThrow('Either boardId or sprintId is required');
+    });
+  });
+
+  describe('get_sprint_daily_tasks without boardId', () => {
+    beforeEach(async () => {
+      mockJiraService.defaultBoardId = null;
+      const { registerJiraTools } = await import('../tools/jiraTools.js');
+      mockMcpServer.registeredTools = {};
+      registerJiraTools(mockMcpServer, mockJiraService);
+    });
+
+    it('should throw error when no boardId or sprintId provided', async () => {
+      const handler = mockMcpServer.registeredTools['get_sprint_daily_tasks'].handler;
+      
+      await expect(handler({})).rejects.toThrow('Either boardId or sprintId is required');
+    });
+  });
+
+  describe('get_comments extractText edge cases', () => {
+    beforeEach(async () => {
+      const { registerJiraTools } = await import('../tools/jiraTools.js');
+      registerJiraTools(mockMcpServer, mockJiraService);
+    });
+
+    it('should handle plain string body', async () => {
+      mockJiraService.getComments.mockResolvedValue({
+        total: 1,
+        comments: [{
+          id: 'comment-1',
+          body: 'Plain text comment', // String instead of ADF
+          author: { displayName: 'John', accountId: 'user-123' },
+          created: '2025-11-29T10:00:00.000Z',
+          updated: '2025-11-29T10:00:00.000Z'
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_comments'].handler;
+      const result = await handler({ taskKey: 'TEST-1', maxResults: 20 });
+
+      expect(result.structuredContent.comments[0].body).toBe('Plain text comment');
+    });
+
+    it('should handle text node type in ADF', async () => {
+      mockJiraService.getComments.mockResolvedValue({
+        total: 1,
+        comments: [{
+          id: 'comment-1',
+          body: {
+            type: 'doc',
+            version: 1,
+            content: [
+              { type: 'text', text: 'Direct text node' }
+            ]
+          },
+          author: { displayName: 'John', accountId: 'user-123' },
+          created: '2025-11-29T10:00:00.000Z',
+          updated: '2025-11-29T10:00:00.000Z'
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_comments'].handler;
+      const result = await handler({ taskKey: 'TEST-1', maxResults: 20 });
+
+      expect(result.structuredContent.comments[0].body).toBe('Direct text node');
+    });
+
+    it('should handle unknown node types in ADF', async () => {
+      mockJiraService.getComments.mockResolvedValue({
+        total: 1,
+        comments: [{
+          id: 'comment-1',
+          body: {
+            type: 'doc',
+            version: 1,
+            content: [
+              { type: 'unknownType', data: 'some data' }
+            ]
+          },
+          author: { displayName: 'John', accountId: 'user-123' },
+          created: '2025-11-29T10:00:00.000Z',
+          updated: '2025-11-29T10:00:00.000Z'
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_comments'].handler;
+      const result = await handler({ taskKey: 'TEST-1', maxResults: 20 });
+
+      expect(result.structuredContent.comments[0].body).toBe('');
+    });
+
+    it('should handle null body', async () => {
+      mockJiraService.getComments.mockResolvedValue({
+        total: 1,
+        comments: [{
+          id: 'comment-1',
+          body: null,
+          author: { displayName: 'John', accountId: 'user-123' },
+          created: '2025-11-29T10:00:00.000Z',
+          updated: '2025-11-29T10:00:00.000Z'
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_comments'].handler;
+      const result = await handler({ taskKey: 'TEST-1', maxResults: 20 });
+
+      expect(result.structuredContent.comments[0].body).toBe('');
+    });
+
+    it('should handle paragraph without content', async () => {
+      mockJiraService.getComments.mockResolvedValue({
+        total: 1,
+        comments: [{
+          id: 'comment-1',
+          body: {
+            type: 'doc',
+            version: 1,
+            content: [
+              { type: 'paragraph' } // No content array
+            ]
+          },
+          author: { displayName: 'John', accountId: 'user-123' },
+          created: '2025-11-29T10:00:00.000Z',
+          updated: '2025-11-29T10:00:00.000Z'
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_comments'].handler;
+      const result = await handler({ taskKey: 'TEST-1', maxResults: 20 });
+
+      expect(result.structuredContent.comments[0].body).toBe('');
+    });
+  });
+
+  describe('get_sprint_daily_tasks with active sprint from board', () => {
+    beforeEach(async () => {
+      mockJiraService.defaultBoardId = 9;
+      const { registerJiraTools } = await import('../tools/jiraTools.js');
+      mockMcpServer.registeredTools = {};
+      registerJiraTools(mockMcpServer, mockJiraService);
+    });
+
+    it('should get active sprint info with dates', async () => {
+      mockJiraService.getActiveSprint.mockResolvedValue({
+        id: 50,
+        name: 'Sprint 10',
+        state: 'active',
+        startDate: '2025-11-25T00:00:00.000Z',
+        endDate: '2025-12-08T00:00:00.000Z'
+      });
+      mockJiraService.searchIssues.mockResolvedValue({ total: 0, issues: [] });
+
+      const handler = mockMcpServer.registeredTools['get_sprint_daily_tasks'].handler;
+      const result = await handler({ boardId: 9 });
+
+      expect(result.structuredContent.sprint.startDate).toBe('2025-11-25');
+      expect(result.structuredContent.sprint.endDate).toBe('2025-12-08');
+    });
+  });
 });
