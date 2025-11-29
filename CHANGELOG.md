@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0-alpha.3] - 2025-11-29
+
+### Added
+- **Field Selection**: Optional `fields` parameter for query tools to return only specific fields
+  - Reduces response size and saves tokens for AI/LLM usage
+  - Supported tools: `get_my_tasks`, `get_tasks_by_date`, `search_tasks`, `get_task_details`, `get_monthly_hours`, `get_sprint_tasks`, `get_sprint_daily_tasks`
+  - Backward compatible: returns all fields when `fields` parameter is not provided
+
+### Example
+```javascript
+// Return only key and summary
+get_my_tasks({ filter: "today", fields: ["key", "summary"] })
+
+// Return specific fields for sprint tasks
+get_sprint_tasks({ boardId: 9, fields: ["key", "summary", "status", "assignee"] })
+```
+
+---
+
 ## [1.2.0-alpha.2] - 2025-11-29
 
 ### Fixed

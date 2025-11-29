@@ -723,4 +723,135 @@ describe('jiraTools', () => {
       expect(result.structuredContent.movedTasks).toEqual(['TEST-1', 'TEST-2']);
     });
   });
+
+  describe('Field Selection', () => {
+    beforeEach(async () => {
+      const { registerJiraTools } = await import('../tools/jiraTools.js');
+      registerJiraTools(mockMcpServer, mockJiraService);
+    });
+
+    it('should return all fields when fields parameter is not provided', async () => {
+      mockJiraService.getCurrentUser.mockResolvedValue({ accountId: 'user-123' });
+      mockJiraService.searchIssues.mockResolvedValue({
+        total: 1,
+        issues: [{
+          key: 'TEST-1',
+          fields: {
+            summary: 'Task 1',
+            status: { name: 'To Do' },
+            priority: { name: 'High' },
+            duedate: '2025-01-20'
+          }
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_my_tasks'].handler;
+      const result = await handler({ filter: 'all' });
+
+      // Should have all fields
+      expect(result.structuredContent.tasks[0]).toHaveProperty('key');
+      expect(result.structuredContent.tasks[0]).toHaveProperty('summary');
+      expect(result.structuredContent.tasks[0]).toHaveProperty('status');
+      expect(result.structuredContent.tasks[0]).toHaveProperty('priority');
+      expect(result.structuredContent.tasks[0]).toHaveProperty('dueDate');
+      expect(result.structuredContent.tasks[0]).toHaveProperty('url');
+    });
+
+    it('should return only requested fields when fields parameter is provided', async () => {
+      mockJiraService.getCurrentUser.mockResolvedValue({ accountId: 'user-123' });
+      mockJiraService.searchIssues.mockResolvedValue({
+        total: 1,
+        issues: [{
+          key: 'TEST-1',
+          fields: {
+            summary: 'Task 1',
+            status: { name: 'To Do' },
+            priority: { name: 'High' },
+            duedate: '2025-01-20'
+          }
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_my_tasks'].handler;
+      const result = await handler({ filter: 'all', fields: ['key', 'summary'] });
+
+      // Should only have requested fields
+      expect(result.structuredContent.tasks[0]).toHaveProperty('key');
+      expect(result.structuredContent.tasks[0]).toHaveProperty('summary');
+      expect(result.structuredContent.tasks[0]).not.toHaveProperty('status');
+      expect(result.structuredContent.tasks[0]).not.toHaveProperty('priority');
+      expect(result.structuredContent.tasks[0]).not.toHaveProperty('dueDate');
+      expect(result.structuredContent.tasks[0]).not.toHaveProperty('url');
+    });
+
+    it('should work with search_tasks field selection', async () => {
+      mockJiraService.getCurrentUser.mockResolvedValue({ accountId: 'user-123' });
+      mockJiraService.searchIssues.mockResolvedValue({
+        total: 1,
+        issues: [{
+          key: 'TEST-1',
+          fields: {
+            summary: 'Found task',
+            status: { name: 'Open' },
+            priority: { name: 'Medium' },
+            assignee: { displayName: 'John Doe' }
+          }
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['search_tasks'].handler;
+      const result = await handler({ query: 'test', maxResults: 50, fields: ['key', 'status'] });
+
+      expect(result.structuredContent.tasks[0]).toHaveProperty('key');
+      expect(result.structuredContent.tasks[0]).toHaveProperty('status');
+      expect(result.structuredContent.tasks[0]).not.toHaveProperty('summary');
+      expect(result.structuredContent.tasks[0]).not.toHaveProperty('assignee');
+    });
+
+    it('should ignore invalid field names', async () => {
+      mockJiraService.getCurrentUser.mockResolvedValue({ accountId: 'user-123' });
+      mockJiraService.searchIssues.mockResolvedValue({
+        total: 1,
+        issues: [{
+          key: 'TEST-1',
+          fields: {
+            summary: 'Task 1',
+            status: { name: 'To Do' },
+            priority: { name: 'High' },
+            duedate: null
+          }
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_my_tasks'].handler;
+      const result = await handler({ filter: 'all', fields: ['key', 'invalidField', 'summary'] });
+
+      // Should only have valid fields
+      expect(result.structuredContent.tasks[0]).toHaveProperty('key');
+      expect(result.structuredContent.tasks[0]).toHaveProperty('summary');
+      expect(result.structuredContent.tasks[0]).not.toHaveProperty('invalidField');
+    });
+
+    it('should return empty object when all fields are invalid', async () => {
+      mockJiraService.getCurrentUser.mockResolvedValue({ accountId: 'user-123' });
+      mockJiraService.searchIssues.mockResolvedValue({
+        total: 1,
+        issues: [{
+          key: 'TEST-1',
+          fields: {
+            summary: 'Task 1',
+            status: { name: 'To Do' },
+            priority: { name: 'High' },
+            duedate: null
+          }
+        }]
+      });
+
+      const handler = mockMcpServer.registeredTools['get_my_tasks'].handler;
+      const result = await handler({ filter: 'all', fields: ['invalid1', 'invalid2'] });
+
+      // Should return empty object for each task
+      expect(Object.keys(result.structuredContent.tasks[0])).toHaveLength(0);
+    });
+  });
 });

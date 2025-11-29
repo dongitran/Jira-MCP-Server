@@ -1,6 +1,39 @@
 import { z } from 'zod';
 import moment from 'moment';
 
+/**
+ * Helper function to select specific fields from a task object
+ * @param {object} task - The task object with all fields
+ * @param {string[]} requestedFields - Array of field names to include
+ * @returns {object} Task object with only requested fields
+ */
+function selectFields(task, requestedFields) {
+  if (!requestedFields || requestedFields.length === 0) {
+    return task; // Return all fields if not specified
+  }
+  
+  const result = {};
+  for (const field of requestedFields) {
+    if (Object.prototype.hasOwnProperty.call(task, field)) {
+      result[field] = task[field];
+    }
+  }
+  return result;
+}
+
+/**
+ * Apply field selection to an array of tasks
+ * @param {object[]} tasks - Array of task objects
+ * @param {string[]} requestedFields - Array of field names to include
+ * @returns {object[]} Array of tasks with only requested fields
+ */
+function selectTaskFields(tasks, requestedFields) {
+  if (!requestedFields || requestedFields.length === 0) {
+    return tasks;
+  }
+  return tasks.map(task => selectFields(task, requestedFields));
+}
+
 export function registerJiraTools(mcpServer, jiraService) {
   
   // Tool 1: Get My Tasks
@@ -14,7 +47,9 @@ export function registerJiraTools(mcpServer, jiraService) {
           .default('all')
           .describe('Filter type for tasks'),
         period: z.enum(['today', 'week', 'month']).optional()
-          .describe('Period for completed tasks filter')
+          .describe('Period for completed tasks filter'),
+        fields: z.array(z.string()).optional()
+          .describe('Fields to return for each task. Available: key, summary, status, priority, dueDate, url. Default: all fields')
       }),
       outputSchema: z.object({
         total: z.number(),
@@ -27,7 +62,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         }))
       })
     },
-    async ({ filter, period }) => {
+    async ({ filter, period, fields }) => {
       const user = await jiraService.getCurrentUser();
       let jql = '';
 
@@ -87,7 +122,7 @@ export function registerJiraTools(mcpServer, jiraService) {
       const output = {
         total: total,
         filter: filter,
-        tasks: tasks
+        tasks: selectTaskFields(tasks, fields)
       };
 
       return {
@@ -105,7 +140,9 @@ export function registerJiraTools(mcpServer, jiraService) {
       description: 'Get tasks active on a specific date (between start date and due date)',
       inputSchema: z.object({
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
-          .describe('Date in YYYY-MM-DD format')
+          .describe('Date in YYYY-MM-DD format'),
+        fields: z.array(z.string()).optional()
+          .describe('Fields to return for each task. Available: key, summary, status, priority, storyPoints, dailyHours, startDate, dueDate, url. Default: all fields')
       }),
       outputSchema: z.object({
         date: z.string(),
@@ -120,7 +157,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         }))
       })
     },
-    async ({ date }) => {
+    async ({ date, fields }) => {
       const user = await jiraService.getCurrentUser();
       const targetDate = moment(date).format('YYYY-MM-DD');
       
@@ -207,7 +244,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         total: tasksOnDate.length,
         totalDailyHours: Math.round(totalDailyHours * 100) / 100,
         totalDailyWorkingHours: Math.round((totalDailyHours / 8) * 100) / 100,
-        tasks: tasksOnDate
+        tasks: selectTaskFields(tasksOnDate, fields)
       };
 
       return {
@@ -225,7 +262,9 @@ export function registerJiraTools(mcpServer, jiraService) {
       description: 'Search tasks using JQL query or keyword',
       inputSchema: z.object({
         query: z.string().describe('JQL query or keyword to search'),
-        maxResults: z.number().default(50).describe('Maximum number of results')
+        maxResults: z.number().default(50).describe('Maximum number of results'),
+        fields: z.array(z.string()).optional()
+          .describe('Fields to return for each task. Available: key, summary, status, priority, assignee, url. Default: all fields')
       }),
       outputSchema: z.object({
         total: z.number(),
@@ -236,7 +275,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         }))
       })
     },
-    async ({ query, maxResults }) => {
+    async ({ query, maxResults, fields }) => {
       const user = await jiraService.getCurrentUser();
       
       // Check if it's a JQL query or simple keyword
@@ -262,7 +301,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         query: query,
         total: result.total,
         returned: tasks.length,
-        tasks: tasks
+        tasks: selectTaskFields(tasks, fields)
       };
 
       return {
@@ -654,7 +693,9 @@ export function registerJiraTools(mcpServer, jiraService) {
       title: 'Get Task Details',
       description: 'Get detailed information about a specific task',
       inputSchema: z.object({
-        taskKey: z.string().describe('Task key (e.g., "URC-123")')
+        taskKey: z.string().describe('Task key (e.g., "URC-123")'),
+        fields: z.array(z.string()).optional()
+          .describe('Fields to return. Available: key, summary, description, status, priority, assignee, issueType, storyPoints, startDate, dueDate, created, hasSubtasks, subtasksCount, subtasks, url. Default: all fields')
       }),
       outputSchema: z.object({
         key: z.string(),
@@ -681,7 +722,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         }))
       })
     },
-    async ({ taskKey }) => {
+    async ({ taskKey, fields }) => {
       const issue = await jiraService.getIssue(
         taskKey,
         'summary,description,status,priority,assignee,customfield_10016,duedate,customfield_10015,created,issuetype,subtasks'
@@ -715,7 +756,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         }
       }
 
-      const output = {
+      const fullOutput = {
         key: issue.key,
         summary: issue.fields.summary,
         description: issue.fields.description?.content?.[0]?.content?.[0]?.text || null,
@@ -732,6 +773,9 @@ export function registerJiraTools(mcpServer, jiraService) {
         subtasks: subtasksDetails,
         url: jiraService.getBrowseUrl(issue.key)
       };
+
+      // Apply field selection
+      const output = selectFields(fullOutput, fields);
 
       return {
         content: [{ type: 'text', text: JSON.stringify(output, null, 2) }],
@@ -829,7 +873,9 @@ export function registerJiraTools(mcpServer, jiraService) {
       title: 'Get Monthly Hours',
       description: 'Calculate total monthly hours based on Story Points and working days for current month',
       inputSchema: z.object({
-        includeCompleted: z.boolean().default(true).describe('Include completed tasks (default: true)')
+        includeCompleted: z.boolean().default(true).describe('Include completed tasks (default: true)'),
+        fields: z.array(z.string()).optional()
+          .describe('Fields to return for each task in breakdown. Available: key, summary, storyPoints, status, type, isSubtask, startDate, endDate, dueDate, monthlyHours, totalHours, calculation, url. Default: all fields')
       }),
       outputSchema: z.object({
         period: z.string(),
@@ -843,7 +889,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         }))
       })
     },
-    async ({ includeCompleted }) => {
+    async ({ includeCompleted, fields }) => {
       const user = await jiraService.getCurrentUser();
 
       // Vietnamese holidays for 2025
@@ -1013,8 +1059,8 @@ export function registerJiraTools(mcpServer, jiraService) {
         totalMonthlyDays: Math.round((totalMonthlyHours / 8) * 100) / 100,
         entries: breakdown.length,
         crossMonthTasksCount: crossMonthTasks.length,
-        breakdown,
-        crossMonthTasks,
+        breakdown: selectTaskFields(breakdown, fields),
+        crossMonthTasks: selectTaskFields(crossMonthTasks, fields),
         summary: {
           currentMonth: currentMonth.monthName,
           totalTasksAnalyzed: result.total,
@@ -1139,7 +1185,9 @@ export function registerJiraTools(mcpServer, jiraService) {
         boardId: z.number().optional().describe(`Board ID to get active sprint tasks${jiraService.defaultBoardId ? `. Default: ${jiraService.defaultBoardId}` : ''}`),
         sprintId: z.number().optional().describe('Sprint ID for specific sprint (overrides boardId)'),
         status: z.enum(['all', 'todo', 'in-progress', 'done']).default('all')
-          .describe('Filter by status: all, todo, in-progress, done')
+          .describe('Filter by status: all, todo, in-progress, done'),
+        fields: z.array(z.string()).optional()
+          .describe('Fields to return for each task. Available: key, summary, status, priority, assignee, assigneeId, issueType, isSubtask, storyPoints, startDate, dueDate, url. Default: all fields')
       }),
       outputSchema: z.object({
         sprint: z.object({
@@ -1157,7 +1205,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         }))
       })
     },
-    async ({ boardId, sprintId, status }) => {
+    async ({ boardId, sprintId, status, fields }) => {
       // Use defaults from config if not provided
       const effectiveBoardId = boardId || jiraService.defaultBoardId;
       
@@ -1265,7 +1313,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         totalStoryPoints: totalStoryPoints,
         statusFilter: status,
         teamSummary: teamSummary,
-        tasks: tasks
+        tasks: selectTaskFields(tasks, fields)
       };
 
       return {
@@ -1283,7 +1331,9 @@ export function registerJiraTools(mcpServer, jiraService) {
       description: 'Get In Progress tasks for all team members in a sprint. Perfect for daily standup. Only shows tasks that are In Progress - if a task has subtasks, only In Progress subtasks are shown. Subtasks of non-In Progress parents are excluded.',
       inputSchema: z.object({
         boardId: z.number().optional().describe(`Board ID to get active sprint${jiraService.defaultBoardId ? `. Default: ${jiraService.defaultBoardId}` : ''}`),
-        sprintId: z.number().optional().describe('Sprint ID for specific sprint (overrides boardId)')
+        sprintId: z.number().optional().describe('Sprint ID for specific sprint (overrides boardId)'),
+        fields: z.array(z.string()).optional()
+          .describe('Fields to return for each task. Available: key, summary, status, priority, assignee, assigneeId, issueType, isSubtask, parentKey, storyPoints, startDate, dueDate, inProgressSubtasks, url. Default: all fields')
       }),
       outputSchema: z.object({
         sprint: z.object({
@@ -1303,7 +1353,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         }))
       })
     },
-    async ({ boardId, sprintId }) => {
+    async ({ boardId, sprintId, fields }) => {
       // Use defaults
       const effectiveBoardId = boardId || jiraService.defaultBoardId;
       
@@ -1493,7 +1543,7 @@ export function registerJiraTools(mcpServer, jiraService) {
         subtasksCount: totalSubtasks,
         teamMemberCount: teamWorkload.length,
         teamWorkload: teamWorkload,
-        tasks: finalTasks
+        tasks: selectTaskFields(finalTasks, fields)
       };
 
       return {

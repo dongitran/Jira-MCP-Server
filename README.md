@@ -126,12 +126,27 @@ Add to `~/Library/Application Support/Code/User/mcp.json` (macOS):
 
 ## Available Tools
 
+### Field Selection (All Query Tools)
+
+Most query tools support an optional `fields` parameter to return only specific fields, reducing response size and saving tokens for AI/LLM usage.
+
+**Example - Return only key and summary:**
+```json
+{
+  "filter": "today",
+  "fields": ["key", "summary"]
+}
+```
+
+**Without fields parameter:** Returns all available fields (default behavior)
+
 ### 1. `get_my_tasks`
 Get tasks assigned to current user with filters.
 
 **Parameters:**
 - `filter`: `todo` | `today` | `in-progress` | `high-priority` | `overdue` | `completed` | `all`
 - `period`: `today` | `week` | `month` (for completed filter)
+- `fields`: (optional) Array of fields to return. Available: `key`, `summary`, `status`, `priority`, `dueDate`, `url`
 
 **Example:**
 ```json
